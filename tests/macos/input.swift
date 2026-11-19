@@ -120,6 +120,16 @@ Task { @MainActor in
     let webpage = try await runProbe("webkit")
     let value = try await web.evaluateJavaScript("edit.value") as? String
     expect(webpage == 0 && value == "Тест Voai 🎙 в браузере", "WebKit textarea")
+    // Monaco and other web editors can expose dozens of groups above the input.
+    let groups = (0..<32).map { "<div role='group' aria-label='Group \($0)'>" }.joined()
+    web.loadHTMLString(groups + "<textarea id='edit'>до СЛОВО после</textarea>" + String(repeating: "</div>", count: 32), baseURL: nil)
+    while web.isLoading { await pump(0.05) }
+    window.makeFirstResponder(web)
+    _ = try await web.evaluateJavaScript("edit.focus(); edit.setSelectionRange(3, 8); true")
+    await pump(0.2)
+    let nested = try await runProbe("nested-web-editor")
+    let updated = try await web.evaluateJavaScript("edit.value") as? String
+    expect(nested == 0 && updated == "до Тест Voai 🎙 после", "deeply nested editor updated the DOM")
     window.orderOut(nil)
     exit(0)
   } catch {

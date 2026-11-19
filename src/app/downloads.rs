@@ -27,38 +27,29 @@ pub(super) struct Downloads {
 impl Downloads {
     pub fn new(dir: PathBuf) -> Self {
         let store = Arc::new(ModelStore::new(dir));
-        let installed = CATALOG
-            .iter()
-            .filter(|m| store.installed(m))
-            .map(|m| m.id)
-            .collect();
-        let errors = CATALOG
-            .iter()
-            .filter(|model| !store.installed(model) && store.partial_bytes(model) > 0)
-            .map(|model| {
-                (
-                    model.id,
-                    ("Загрузка прервана".to_string(), store.partial_bytes(model)),
-                )
-            })
-            .collect();
-        Self {
+        let mut downloads = Self {
             store,
             jobs: HashMap::new(),
-            errors,
-            installed,
-        }
+            errors: HashMap::new(),
+            installed: Vec::new(),
+        };
+        downloads.reconcile();
+        downloads
     }
 
     pub fn start(&mut self, model: &'static ModelSpec) {
-        if self.jobs.contains_key(model.id) || self.store.installed(model) {
+        if self.jobs.contains_key(model.id) {
+            return;
+        }
+        if self.store.installed(model) {
+            self.reconcile();
             return;
         }
         self.installed.retain(|id| *id != model.id);
         self.errors.remove(model.id);
         let store = Arc::clone(&self.store);
         let cancel = Arc::new(AtomicBool::new(false));
-        let received = Arc::new(AtomicU64::new(0));
+        let received = Arc::new(AtomicU64::new(self.store.partial_bytes(model)));
         let (tx, done) = mpsc::channel();
         let flag = Arc::clone(&cancel);
         let progress = Arc::clone(&received);
@@ -80,8 +71,26 @@ impl Downloads {
     }
 
     pub fn reconcile(&mut self) {
-        self.installed
-            .retain(|id| voai_models::find(id).is_some_and(|model| self.store.installed(model)));
+        self.installed.clear();
+        for model in CATALOG {
+            if self.jobs.contains_key(model.id) {
+                continue;
+            }
+            if self.store.installed(model) {
+                self.installed.push(model.id);
+                self.errors.remove(model.id);
+            } else {
+                let bytes = self.store.partial_bytes(model);
+                if let Some(error) = self.errors.get_mut(model.id) {
+                    error.1 = bytes;
+                } else if bytes > 0 {
+                    self.errors.insert(
+                        model.id,
+                        ("Загрузка прервана. Можно продолжить.".into(), bytes),
+                    );
+                }
+            }
+        }
     }
 
     pub fn cancel(&self, id: &str) {
@@ -113,6 +122,7 @@ impl Downloads {
         CATALOG
             .iter()
             .map(|model| {
+                let selected = settings.speech == model.id || settings.text == model.id;
                 let state = if let Some(job) = self.jobs.get(model.id) {
                     ModelState::Downloading {
                         received: job.received.load(Ordering::Relaxed),
@@ -120,11 +130,13 @@ impl Downloads {
                 } else if let Some(error) = self.errors.get(model.id) {
                     ModelState::Failed(error.0.clone())
                 } else if self.installed.contains(&model.id) {
-                    if settings.speech == model.id || settings.text == model.id {
+                    if selected {
                         ModelState::Selected
                     } else {
                         ModelState::Installed
                     }
+                } else if selected {
+                    ModelState::Failed("Файл выбранной модели недоступен. Верните его в каталог или повторите загрузку.".into())
                 } else {
                     ModelState::Available
                 };
@@ -137,7 +149,7 @@ impl Downloads {
                     on_disk: match &state {
                         ModelState::Selected | ModelState::Installed => model.bytes,
                         ModelState::Downloading { received } => *received,
-                        ModelState::Failed(_) => self.errors[model.id].1,
+                        ModelState::Failed(_) => self.errors.get(model.id).map_or(0, |error| error.1),
                         ModelState::Available | ModelState::Unavailable(_) => 0,
                     },
                     text_model: model.kind == ModelKind::Text,
@@ -153,5 +165,59 @@ impl Drop for Downloads {
         for job in self.jobs.values() {
             job.cancel.store(true, Ordering::Release);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{fs, time::SystemTime};
+
+    #[test]
+    fn catalog_recovers_selected_install_after_the_model_folder_returns() {
+        let tmp = tempfile::tempdir().unwrap();
+        let model = &CATALOG[0];
+        let subdir = tmp.path().join(model.sha256);
+        let mut downloads = Downloads::new(tmp.path().to_owned());
+        let mut settings = Settings::default();
+        settings.speech = model.id.to_owned();
+        fs::create_dir(&subdir).unwrap();
+        fs::write(subdir.join("download.part"), b"abc").unwrap();
+        downloads.reconcile();
+        assert_eq!(downloads.rows(&settings)[0].on_disk, 3);
+
+        // Simulate mount/unmount of a pre-existing immutable catalog cache.
+        // A sparse fixture only tests discovery of the legacy receipt.
+        let name = model.url.rsplit('/').next().unwrap();
+        let file = fs::File::create(subdir.join(name)).unwrap();
+        file.set_len(model.bytes).unwrap();
+        let time = file
+            .metadata()
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        fs::write(
+            subdir.join("verified"),
+            format!("{} {} {time}", model.sha256, model.bytes),
+        )
+        .unwrap();
+        fs::remove_file(subdir.join("download.part")).unwrap();
+        downloads.reconcile();
+        assert!(downloads.rows(&settings)[0].state == ModelState::Selected);
+
+        let offline = tmp.path().join("offline");
+        fs::rename(&subdir, &offline).unwrap();
+        downloads.reconcile();
+        assert!(matches!(
+            downloads.rows(&settings)[0].state,
+            ModelState::Failed(_)
+        ));
+        assert_eq!(downloads.rows(&settings)[0].on_disk, 0);
+        fs::rename(offline, subdir).unwrap();
+        downloads.reconcile();
+        assert!(downloads.rows(&settings)[0].state == ModelState::Selected);
     }
 }

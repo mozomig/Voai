@@ -15,7 +15,16 @@ use tray::{MenuCommand, StatusItem};
 
 type Engine = Rc<RefCell<Backend>>;
 
-actions!(voai, [OpenSettings, Quit, CloseSettings]);
+actions!(
+    voai,
+    [
+        OpenSettings,
+        OpenPermissions,
+        OpenSpeechModels,
+        Quit,
+        CloseSettings
+    ]
+);
 
 struct Desktop {
     engine: Engine,
@@ -26,6 +35,18 @@ struct Desktop {
 }
 
 impl Desktop {
+    fn show_setup(&mut self, models: bool, cx: &mut App) {
+        self.engine.borrow_mut().dispatch(Command::Cancel);
+        self.show_settings(cx);
+        if let Some(handle) = self.settings {
+            let _ = handle.update(cx, |root, window, cx| {
+                if let Ok(settings) = root.view().clone().downcast::<Settings>() {
+                    settings.update(cx, |view, cx| view.show_dictation_setup(models, window, cx));
+                }
+            });
+        }
+    }
+
     fn show_settings(&mut self, cx: &mut App) {
         if let Some(handle) = self.settings
             && handle
@@ -72,16 +93,24 @@ impl Desktop {
     }
 
     fn refresh_delay(&self) -> Duration {
-        let busy = self.last.as_ref().is_some_and(|s| {
-            matches!(
-                s.phase,
-                Phase::Listening | Phase::Finishing | Phase::Editing | Phase::Inserting
-            ) || s
+        let Some(snapshot) = &self.last else {
+            return Duration::from_millis(500);
+        };
+        if matches!(
+            snapshot.phase,
+            Phase::Listening | Phase::Finishing | Phase::Editing | Phase::Inserting
+        ) {
+            return Duration::from_millis(33);
+        }
+        if self.settings.is_some()
+            && snapshot
                 .models
                 .iter()
                 .any(|m| matches!(m.state, ModelState::Downloading { .. }))
-        });
-        Duration::from_millis(if busy { 33 } else { 500 })
+        {
+            return Duration::from_millis(200);
+        }
+        Duration::from_millis(500)
     }
 
     fn poll(&mut self, cx: &mut App) {
@@ -135,7 +164,7 @@ impl Desktop {
             if let Some(display) = appearance::pointer_display(cx).or_else(|| cx.primary_display())
             {
                 let bounds = display.bounds();
-                let dimensions = size(px(430.).min(bounds.size.width), px(178.));
+                let dimensions = size(px(430.).min(bounds.size.width), panel::height(&snapshot));
                 let origin = point(
                     (bounds.size.width - dimensions.width) / 2.,
                     (bounds.size.height - dimensions.height - px(85.)).max(px(0.)),
@@ -165,7 +194,9 @@ impl Desktop {
         } else if (changed || snapshot.phase == Phase::Listening)
             && let Some(panel) = self.panel
             && panel
-                .update(cx, |panel, _, cx| panel.sync(snapshot.clone(), cx))
+                .update(cx, |panel, window, cx| {
+                    panel.sync(snapshot.clone(), window, cx)
+                })
                 .is_err()
         {
             self.panel = None;
@@ -192,6 +223,10 @@ pub fn run(backend: Backend) {
         gpui_component::set_locale("ru");
         let settings = desktop.clone();
         cx.on_action(move |_: &OpenSettings, cx| settings.borrow_mut().show_settings(cx));
+        let permissions = desktop.clone();
+        cx.on_action(move |_: &OpenPermissions, cx| permissions.borrow_mut().show_setup(false, cx));
+        let models = desktop.clone();
+        cx.on_action(move |_: &OpenSpeechModels, cx| models.borrow_mut().show_setup(true, cx));
         cx.on_action(|_: &Quit, cx| cx.quit());
         let closable = desktop.clone();
         cx.on_action(move |_: &CloseSettings, cx| {

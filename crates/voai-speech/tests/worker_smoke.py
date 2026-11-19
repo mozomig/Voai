@@ -56,7 +56,7 @@ def main():
         raise AssertionError("Invalid model handshake")
     partial, final, silence = (reply(messages) for _ in range(3))
     if not partial or args.expected_fragment.casefold() not in final.casefold():
-        raise AssertionError(f"Unexpected recognition: partial={partial!r}, final={final!r}")
+        raise AssertionError("Missing preview or expected phrase in final result")
     if silence or messages.read(1):
         raise AssertionError("Stale text or unexpected output after finishing")
     print("Model handshake, partial, final, silence, and orderly worker exit passed.")

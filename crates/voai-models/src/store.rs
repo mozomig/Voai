@@ -3,7 +3,8 @@ use anyhow::{Context, Result, ensure};
 use ring::digest;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::PathBuf;
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, SystemTime};
 
@@ -31,7 +32,7 @@ impl ModelStore {
         let stamp =
             fs::read_to_string(self.dir(model).join("verified")).context("Модель не проверена")?;
         ensure!(
-            stamp == verified_stamp(&metadata, model)?,
+            stamp == verified_stamp(&metadata, model)? || stamp == legacy_stamp(&metadata, model)?,
             "Файл модели изменился после проверки"
         );
         Ok(path)
@@ -46,12 +47,30 @@ impl ModelStore {
     }
 
     /// The byte identity comes from the pinned revision and SHA-256. A server
-    /// ignoring Range causes a restart from zero. No partial file is published.
+    /// ignoring Range streams the prefix again while keeping the saved bytes.
     pub fn download(
         &self,
         model: &ModelSpec,
         cancel: &AtomicBool,
+        progress: impl FnMut(u64),
+    ) -> Result<PathBuf> {
+        let agent = ureq::Agent::config_builder()
+            .https_only(true)
+            .timeout_connect(Some(Duration::from_secs(10)))
+            .timeout_recv_response(Some(Duration::from_secs(20)))
+            .timeout_per_read(Some(Duration::from_secs(15)))
+            .build()
+            .new_agent();
+        self.download_with(model, cancel, progress, &agent, model.url)
+    }
+
+    fn download_with(
+        &self,
+        model: &ModelSpec,
+        cancel: &AtomicBool,
         mut progress: impl FnMut(u64),
+        agent: &ureq::Agent,
+        url: &str,
     ) -> Result<PathBuf> {
         check_cancelled(cancel)?;
         if let Ok(path) = self.installed_path(model) {
@@ -73,6 +92,25 @@ impl ModelStore {
             progress(model.bytes);
             return Ok(path);
         }
+        // A restored cache or interrupted publish can have valid weights and
+        // no usable receipt. Reverify locally before starting a network transfer.
+        let installed = dir.join(model.filename);
+        if installed
+            .symlink_metadata()
+            .is_ok_and(|m| m.is_file() && m.len() == model.bytes)
+        {
+            let mut existing =
+                File::open(&installed).context("Не удалось прочитать установленную модель")?;
+            let stamp = verified_stamp(&existing.metadata()?, model)?;
+            if verify(&mut existing, model, cancel)?
+                && stamp == verified_stamp(&installed.symlink_metadata()?, model)?
+            {
+                check_cancelled(cancel)?;
+                save_receipt(&dir, &stamp)?;
+                progress(model.bytes);
+                return Ok(installed);
+            }
+        }
         let part = dir.join("download.part");
         let mut output = OpenOptions::new()
             .create(true)
@@ -88,20 +126,25 @@ impl ModelStore {
         }
         progress(offset);
         if offset < model.bytes {
-            let agent = ureq::Agent::config_builder()
-                .https_only(true)
-                .timeout_connect(Some(Duration::from_secs(10)))
-                .timeout_recv_response(Some(Duration::from_secs(20)))
-                .timeout_per_read(Some(Duration::from_secs(15)))
-                .build()
-                .new_agent();
-            let mut request = agent.get(model.url).header("Accept-Encoding", "identity");
-            if offset > 0 {
-                request = request.header("Range", format!("bytes={offset}-"));
-            }
-            let mut response = request.call().map_err(|err| {
-                anyhow::anyhow!("Не удалось скачать модель ({})", http_failure(&err))
+            let get = || agent.get(url).header("Accept-Encoding", "identity");
+            let response = if offset == 0 {
+                get().call()
+            } else {
+                match get().header("Range", format!("bytes={offset}-")).call() {
+                    Err(ureq::Error::StatusCode(416)) => {
+                        check_cancelled(cancel)?;
+                        get().call()
+                    }
+                    other => other,
+                }
+            };
+            let mut response = response.map_err(|err| {
+                anyhow::anyhow!(
+                    "Не удалось скачать модель ({}). Повторите загрузку",
+                    http_failure(&err)
+                )
             })?;
+            let mut skip_prefix = 0;
             match response.status().as_u16() {
                 206 => {
                     let expected = format!("bytes {offset}-{}/{}", model.bytes - 1, model.bytes);
@@ -115,16 +158,16 @@ impl ModelStore {
                     );
                 }
                 200 => {
-                    output.set_len(0)?;
-                    output.rewind()?;
-                    offset = 0;
-                    progress(0);
+                    // The URL pins immutable content. Overlap already on disk is
+                    // skipped. Final SHA-256 still verifies the entire file.
+                    skip_prefix = offset;
                 }
                 code => anyhow::bail!("Сервис загрузки вернул HTTP {code}"),
             }
             transfer(
                 response.body_mut().as_reader(),
                 &mut output,
+                skip_prefix,
                 offset,
                 model.bytes,
                 cancel,
@@ -139,20 +182,35 @@ impl ModelStore {
             anyhow::bail!("Контрольная сумма модели не совпала. Повторите загрузку");
         }
         check_cancelled(cancel)?;
-        let installed = dir.join(model.filename);
-        let mut receipt = File::create(dir.join("verified.next"))?;
-        receipt.write_all(verified_stamp(&output.metadata()?, model)?.as_bytes())?;
-        receipt.sync_all()?;
-        fs::rename(dir.join("verified.next"), dir.join("verified"))?;
         fs::rename(part, &installed)?;
-        File::open(dir)?.sync_all()?;
+        save_receipt(&dir, &verified_stamp(&output.metadata()?, model)?)?;
         Ok(installed)
     }
 }
 
+fn save_receipt(dir: &Path, stamp: &str) -> Result<()> {
+    let mut receipt = File::create(dir.join("verified.next"))?;
+    receipt.write_all(stamp.as_bytes())?;
+    receipt.sync_all()?;
+    fs::rename(dir.join("verified.next"), dir.join("verified"))?;
+    File::open(dir)?.sync_all()?;
+    Ok(())
+}
+
+fn verified_stamp(metadata: &fs::Metadata, model: &ModelSpec) -> Result<String> {
+    Ok(format!(
+        "v2 {} {} {} {} {}",
+        legacy_stamp(metadata, model)?,
+        metadata.dev(),
+        metadata.ino(),
+        metadata.ctime(),
+        metadata.ctime_nsec()
+    ))
+}
+
 // A cheap startup check ties the SHA-verified artifact to its last modification
 // time. Hashing a gigabyte of weights on the UI thread would stall each launch.
-fn verified_stamp(metadata: &fs::Metadata, model: &ModelSpec) -> Result<String> {
+fn legacy_stamp(metadata: &fs::Metadata, model: &ModelSpec) -> Result<String> {
     let modified = metadata
         .modified()?
         .duration_since(SystemTime::UNIX_EPOCH)?
@@ -172,6 +230,7 @@ pub(crate) fn http_failure(error: &ureq::Error) -> String {
 fn transfer(
     mut input: impl Read,
     out: &mut impl Write,
+    mut skip_prefix: u64,
     mut count: u64,
     bytes: u64,
     cancel: &AtomicBool,
@@ -180,21 +239,26 @@ fn transfer(
     let mut buf = vec![0; 128 * 1024];
     loop {
         check_cancelled(cancel)?;
-        let n = input.read(&mut buf).context("Загрузка прервана")?;
+        let n = input
+            .read(&mut buf)
+            .context("Соединение прервано. Повторите загрузку, чтобы продолжить")?;
         if n == 0 {
             break;
         }
-        count += n as u64;
+        let skip = skip_prefix.min(n as u64);
+        skip_prefix -= skip;
+        let fresh = &buf[skip as usize..n];
+        count += fresh.len() as u64;
         ensure!(
             count <= bytes,
             "Сервер прислал больше данных, чем ожидалось"
         );
-        out.write_all(&buf[..n])
+        out.write_all(fresh)
             .context("Не удалось сохранить веса на диске")?;
         progress(count);
     }
     ensure!(
-        count == bytes,
+        count == bytes && skip_prefix == 0,
         "Загрузка прервана. Скачано {count} из {bytes} байт"
     );
     Ok(())
@@ -215,78 +279,4 @@ fn verify(input: &mut impl Read, model: &ModelSpec, cancel: &AtomicBool) -> Resu
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{CATALOG, ModelSpec};
-    use std::sync::atomic::Ordering;
-
-    fn fixture() -> ModelSpec {
-        ModelSpec {
-            bytes: 3,
-            sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-            ..CATALOG[0]
-        }
-    }
-    #[test]
-    fn completes_interrupted_download_after_digest_check() {
-        let tmp = tempfile::tempdir().unwrap();
-        let store = ModelStore::new(tmp.path().into());
-        let model = fixture();
-        fs::create_dir_all(store.dir(&model)).unwrap();
-        fs::write(store.dir(&model).join("download.part"), b"abc").unwrap();
-        assert!(!store.installed(&model));
-        store
-            .download(&model, &AtomicBool::new(false), |_| {})
-            .unwrap();
-        assert_eq!(
-            fs::read(store.installed_path(&model).unwrap()).unwrap(),
-            b"abc"
-        );
-        assert_eq!(store.partial_bytes(&model), 0);
-    }
-    #[test]
-    fn refuses_a_modified_installed_file_with_the_same_length() {
-        let tmp = tempfile::tempdir().unwrap();
-        let store = ModelStore::new(tmp.path().into());
-        let model = fixture();
-        fs::create_dir_all(store.dir(&model)).unwrap();
-        fs::write(store.dir(&model).join("download.part"), b"abc").unwrap();
-        let path = store
-            .download(&model, &AtomicBool::new(false), |_| {})
-            .unwrap();
-        let mut out = File::create(path).unwrap();
-        out.write_all(b"bad").unwrap();
-        out.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(1))
-            .unwrap();
-        assert!(!store.installed(&model));
-    }
-
-    #[test]
-    fn rejects_bad_digest_and_clears_bad_partial() {
-        let tmp = tempfile::tempdir().unwrap();
-        let store = ModelStore::new(tmp.path().into());
-        let model = fixture();
-        fs::create_dir_all(store.dir(&model)).unwrap();
-        fs::write(store.dir(&model).join("download.part"), b"bad").unwrap();
-        assert!(
-            store
-                .download(&model, &AtomicBool::new(false), |_| {})
-                .is_err()
-        );
-        assert!(!store.installed(&model));
-        assert_eq!(store.partial_bytes(&model), 0);
-    }
-    #[test]
-    fn interrupted_or_excess_bytes_never_report_complete() {
-        let stop = AtomicBool::new(false);
-        let mut out = Vec::new();
-        assert!(transfer(&b"bc"[..], &mut out, 1, 5, &stop, &mut |_| {}).is_err());
-        assert_eq!(out, b"bc");
-        out.clear();
-        assert!(transfer(&b"bc"[..], &mut out, 2, 3, &stop, &mut |_| {}).is_err());
-        assert!(out.is_empty());
-        stop.store(true, Ordering::Release);
-        assert!(transfer(&b"abc"[..], &mut out, 0, 3, &stop, &mut |_| {}).is_err());
-        assert!(out.is_empty());
-    }
-}
+mod tests;

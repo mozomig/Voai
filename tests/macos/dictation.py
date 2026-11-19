@@ -59,13 +59,12 @@ def main():
                    VOAI_QA_WHISPER=str(args.whisper.resolve()), VOAI_QA_QWEN=str(args.qwen.resolve()),
                    VOAI_QA_PCM=str(pcm), VOAI_QA_RATE=str(rate))
         result = subprocess.run(
-            [runner, "--exact", "app::session::acceptance::recorded_speech_reaches_test_field",
-             "--ignored", "--nocapture"], env=env, stdout=subprocess.PIPE, text=True,
+            [runner, "app::session::acceptance::", "--ignored", "--nocapture", "--test-threads=1"], env=env, stdout=subprocess.PIPE, text=True,
             timeout=420,
         )
         print(result.stdout, end="")
         result.check_returncode()
-        if "1 passed" not in result.stdout:
+        if "2 passed" not in result.stdout:
             raise SystemExit("The dictation acceptance test did not run")
 
 

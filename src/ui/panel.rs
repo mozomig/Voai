@@ -1,10 +1,18 @@
 use std::collections::VecDeque;
 
 use super::{Engine, style::*};
-use crate::app::{Command, Phase, Snapshot};
+use crate::app::{Command, ModelState, Phase, Snapshot};
 use gpui::{prelude::*, *};
 
 const BARS: usize = 23;
+
+pub(super) fn height(snapshot: &Snapshot) -> Pixels {
+    match snapshot.phase {
+        Phase::Error if snapshot.message.chars().count() <= 90 => px(146.),
+        Phase::RecoverFocus | Phase::RecoverText | Phase::Uncertain => px(218.),
+        _ => px(178.),
+    }
+}
 
 pub(super) struct Panel {
     engine: Engine,
@@ -22,7 +30,10 @@ impl Panel {
         }
     }
 
-    pub(super) fn sync(&mut self, snapshot: Snapshot, cx: &mut Context<Self>) {
+    pub(super) fn sync(&mut self, snapshot: Snapshot, window: &mut Window, cx: &mut Context<Self>) {
+        if height(&snapshot) != height(&self.snapshot) {
+            window.resize(size(window.bounds().size.width, height(&snapshot)));
+        }
         if snapshot.phase == Phase::Listening {
             self.levels.pop_front();
             self.levels.push_back(snapshot.level.clamp(0., 1.));
@@ -77,17 +88,23 @@ impl Render for Panel {
             Phase::RecoverFocus | Phase::RecoverText | Phase::Uncertain | Phase::Error
         );
         let transcript = if recovering {
-            s.transcript.as_str()
+            s.transcript.clone()
         } else {
-            tail(&s.transcript, 108)
+            live_tail(&s.transcript, 108)
         };
-        let mut live_text = StyledText::new(transcript.to_owned());
-        if listening
-            && let Some(last) = transcript.split_whitespace().next_back()
-            && let Some(start) = transcript.rfind(last)
-        {
+        let empty = transcript.is_empty();
+        let last_word = listening
+            .then(|| transcript.trim_end())
+            .and_then(|trimmed| {
+                trimmed
+                    .split_whitespace()
+                    .next_back()
+                    .map(|word| trimmed.len() - word.len()..trimmed.len())
+            });
+        let mut live_text = StyledText::new(transcript);
+        if let Some(range) = last_word {
             live_text = live_text.with_highlights([(
-                start..start + last.len(),
+                range,
                 HighlightStyle {
                     underline: Some(UnderlineStyle {
                         thickness: px(1.),
@@ -99,7 +116,6 @@ impl Render for Panel {
             )]);
         }
         let hint = match s.phase {
-            Phase::Listening if !s.message.is_empty() => s.message.clone(),
             Phase::Listening if s.elapsed_secs >= 300 => {
                 "Запись остановлена. Отпустите клавиши.".into()
             }
@@ -110,9 +126,26 @@ impl Render for Panel {
             Phase::RecoverFocus => {
                 format!("Выберите поле и нажмите {}", shortcut_label(&s.shortcut))
             }
-            Phase::RecoverText | Phase::Uncertain => "Фраза сохранена в панели".into(),
-            Phase::Error => String::new(),
             _ => String::new(),
+        };
+        let setup: Option<(&str, Box<dyn Action>)> = if s.phase != Phase::Error {
+            None
+        } else if !s.access_allowed || !s.mic_allowed {
+            Some(("Открыть разрешения", Box::new(super::OpenPermissions)))
+        } else if !s
+            .models
+            .iter()
+            .any(|m| !m.text_model && matches!(m.state, ModelState::Selected))
+        {
+            Some(("Выбрать речевую модель", Box::new(super::OpenSpeechModels)))
+        } else {
+            None
+        };
+        let footer = match setup {
+            Some((label, action)) => primary_button("open-setup", label, p)
+                .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
+                .into_any_element(),
+            None => text(hint, 11., p.muted).into_any_element(),
         };
         col()
             .size_full()
@@ -176,18 +209,18 @@ impl Render for Panel {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
+                    .when((recovering || listening) && !s.message.is_empty(), |v| {
+                        v.child(text(s.message.clone(), 13., p.ink).mb_1())
+                    })
                     .child(
                         div()
                             .text_size(px(17.))
                             .line_height(px(22.))
                             .child(live_text)
-                            .when(listening && transcript.is_empty(), |d| {
+                            .when(listening && empty, |d| {
                                 d.child(text("Говорите…", 17., p.muted))
                             }),
-                    )
-                    .when(recovering && !s.message.is_empty(), |v| {
-                        v.child(text(s.message.clone(), 12., p.muted))
-                    }),
+                    ),
             )
             .when(s.phase == Phase::RecoverText, |v| {
                 v.child(row().mt_1().child(
@@ -220,26 +253,40 @@ impl Render for Panel {
                             this.engine.borrow_mut().dispatch(Command::Cancel)
                         })),
                     )
-                    .child(text(hint, 11., p.muted)),
+                    .child(footer),
             )
     }
 }
 
-fn tail(text: &str, count: usize) -> &str {
-    text.char_indices()
-        .rev()
-        .nth(count.saturating_sub(1))
-        .map_or(text, |(offset, _)| &text[offset..])
+/// Mark omitted text and avoid starting the preview in the middle of a word.
+fn live_tail(text: &str, count: usize) -> String {
+    let mut reversed = text.char_indices().rev();
+    let Some((last_omitted, omitted_char)) = reversed.nth(count) else {
+        return text.to_owned();
+    };
+    let suffix = &text[last_omitted + omitted_char.len_utf8()..];
+    let visible = if omitted_char.is_whitespace() {
+        suffix
+    } else {
+        suffix
+            .split_once(char::is_whitespace)
+            .map(|(_, rest)| rest.trim_start())
+            .filter(|rest| !rest.is_empty())
+            .unwrap_or(suffix)
+    };
+    format!("…{}", visible.trim_start())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::tail;
+    use super::live_tail;
 
     #[test]
-    fn live_tail_keeps_utf8_character_boundaries() {
-        assert_eq!(tail("ёж 🦀", 2), " 🦀");
-        assert_eq!(tail("ёж 🦀", 20), "ёж 🦀");
-        assert_eq!(tail("", 108), "");
+    fn live_preview_marks_omissions_at_word_and_utf8_boundaries() {
+        assert_eq!(live_tail("ёж 🦀", 2), "…🦀");
+        assert_eq!(live_tail("ёж 🦀", 4), "ёж 🦀");
+        assert_eq!(live_tail("доброе утро", 4), "…утро");
+        assert_eq!(live_tail("длинноеслово", 5), "…слово");
+        assert_eq!(live_tail("", 108), "");
     }
 }

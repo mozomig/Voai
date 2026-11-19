@@ -151,3 +151,47 @@ impl Connections {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn selected_link_recovers_when_its_parent_folder_returns() {
+        let tmp = tempfile::tempdir().unwrap();
+        let online = tmp.path().join("volume");
+        let offline = tmp.path().join("offline");
+        fs::create_dir(&online).unwrap();
+        let path = online.join("model.gguf");
+        let mut file = b"GGUF".to_vec();
+        file.extend(3u32.to_le_bytes());
+        for value in [1u64; 3] {
+            file.extend(value.to_le_bytes());
+        }
+        file.push(b'x');
+        file.extend(2u32.to_le_bytes());
+        file.extend(1u16.to_le_bytes());
+        file.resize(100, 0);
+        fs::write(path.as_path(), file).unwrap();
+        let model = ConnectedModel::connect(&path, ModelKind::Text, 1024, |_| Ok(())).unwrap();
+        let mut settings = Settings::default();
+        settings.text = model.id();
+        settings.connect(model);
+        let (wake, ready) = async_channel::bounded(1);
+        let mut connections = Connections::default();
+        let mut probe = || {
+            connections.refresh(&settings.local_models, wake.clone());
+            ready.recv_blocking().unwrap();
+            connections.poll_health(&settings.local_models);
+            connections.rows(&settings).remove(0).state
+        };
+        assert!(probe() == ModelState::Selected);
+        fs::rename(&online, &offline).unwrap();
+        assert!(
+            matches!(probe(), ModelState::Unavailable(message) if message.contains("не найден"))
+        );
+        fs::rename(offline, online).unwrap();
+        assert!(probe() == ModelState::Selected);
+    }
+}

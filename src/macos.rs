@@ -41,7 +41,22 @@ fn attribute<T: ConcreteType>(field: &AXUIElement, key: &str) -> Result<CFRetain
 }
 
 fn required<T: ConcreteType>(field: &AXUIElement, key: &str) -> Result<CFRetained<T>, String> {
-    attribute(field, key).map_err(|error| format!("Не удалось прочитать {key} (AX {})", error.0))
+    attribute(field, key).map_err(|error| match error {
+        AXError::APIDisabled => permission_hint().into(),
+        AXError::CannotComplete => {
+            "Приложение не ответило. Вернитесь в редактор и попробуйте ещё раз.".into()
+        }
+        AXError::NoValue | AXError::AttributeUnsupported => match key {
+            "AXSelectedTextRange" => {
+                "Редактор не сообщает положение курсора. Выберите другое текстовое поле.".into()
+            }
+            "AXFocusedUIElement" | "AXWindow" | "AXFocusedWindow" => {
+                "Установите курсор в текстовое поле.".into()
+            }
+            _ => "Поле не поддерживает прямой ввод.".into(),
+        },
+        _ => format!("Не удалось прочитать {key} (AX {})", error.0),
+    })
 }
 
 fn focused_field(pid: i32) -> Result<CFRetained<AXUIElement>, String> {
@@ -113,23 +128,9 @@ fn capture(expected: Option<i32>) -> Result<Target, String> {
             false
         }
     };
-    let mut parent = field.clone();
-    let mut web = false;
-    for _ in 0..20 {
-        if attribute::<CFString>(&parent, "AXRole")
-            .is_ok_and(|role| role.to_string() == "AXWebArea")
-        {
-            web = true;
-            break;
-        }
-        let Ok(next) = attribute(&parent, "AXParent") else {
-            break;
-        };
-        parent = next;
-    }
     // WebKit can acknowledge AXSelectedText writes without updating the DOM.
-    // Send ordinary Unicode input to web editors so their input handlers run.
-    let direct_write = settable && !web;
+    // Inspect the ancestry only when a native AX write is otherwise possible.
+    let direct_write = settable && has_native_ancestry(&field);
     if !direct_write {
         let role: CFRetained<CFString> = required(&field, "AXRole")?;
         if !matches!(
@@ -152,6 +153,27 @@ fn capture(expected: Option<i32>) -> Result<Target, String> {
         window,
         selection,
     })
+}
+
+fn has_native_ancestry(field: &CFRetained<AXUIElement>) -> bool {
+    let mut element = field.clone();
+    // Monaco can put more than twenty containers between its editable surface
+    // and AXWebArea. Only enable direct writes after finding the native host.
+    for _ in 0..64 {
+        let Ok(role) = attribute::<CFString>(&element, "AXRole") else {
+            break;
+        };
+        match role.to_string().as_str() {
+            "AXWebArea" => return false,
+            "AXWindow" | "AXApplication" => return true,
+            _ => {}
+        }
+        let Ok(parent) = attribute(&element, "AXParent") else {
+            break;
+        };
+        element = parent;
+    }
+    false
 }
 
 fn selected_range(field: &AXUIElement) -> Result<CFRange, String> {
@@ -254,20 +276,19 @@ impl Destination {
             "Таймаут Accessibility",
         )?;
         // Electron publishes its editable DOM only after assistive clients opt in.
-        if let Some(front) = front_pid().filter(|front| pid.is_none_or(|pid| *front == pid)) {
-            let app = unsafe { AXUIElement::new_application(front) };
-            let attr = CFString::from_str("AXManualAccessibility");
-            let mut supported = 0;
-            if unsafe { app.is_attribute_settable(&attr, (&mut supported).into()) }
-                == AXError::Success
-                && supported != 0
-            {
-                unsafe {
-                    app.set_attribute_value(&attr, objc2_core_foundation::CFBoolean::new(true))
-                };
-            }
+        let front = front_pid().ok_or("Нет активного приложения")?;
+        if pid.is_some_and(|expected| front != expected) {
+            return Err("Фокус находится в другом процессе.".into());
         }
-        let target = capture(pid)?;
+        let app = unsafe { AXUIElement::new_application(front) };
+        let attr = CFString::from_str("AXManualAccessibility");
+        let mut supported = 0;
+        if unsafe { app.is_attribute_settable(&attr, (&mut supported).into()) } == AXError::Success
+            && supported != 0
+        {
+            unsafe { app.set_attribute_value(&attr, objc2_core_foundation::CFBoolean::new(true)) };
+        }
+        let target = capture(Some(front))?;
         let pending = PendingInsertion::new(target);
         Ok(Self { pending })
     }
@@ -362,7 +383,9 @@ impl Receipt {
             range,
             parameter,
             expected,
-            deadline: Instant::now() + Duration::from_secs(1),
+            // Electron can update the document well before it publishes the new
+            // accessible range. Return as soon as the edit is visible.
+            deadline: Instant::now() + Duration::from_secs(4),
         })
     }
 

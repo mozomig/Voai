@@ -22,11 +22,30 @@ fn tick_until(
         }
         assert!(
             Instant::now() < deadline,
-            "Timed out. Last text: {:?}",
-            session.text
+            "Timed out waiting for the session"
         );
         thread::sleep(Duration::from_millis(15));
     }
+}
+
+fn assert_phrase_boundaries(text: &str) {
+    let words = text.to_lowercase();
+    assert!(
+        words.contains("давай") && words.contains("пятниц"),
+        "Incomplete fixture phrase"
+    );
+}
+
+fn input() -> (Vec<f32>, usize) {
+    let bytes = fs::read(fixture_path("VOAI_QA_PCM")).unwrap();
+    let (frames, remainder) = bytes.as_chunks::<2>();
+    assert!(remainder.is_empty());
+    let samples: Vec<_> = frames
+        .iter()
+        .map(|&frame| f32::from(i16::from_le_bytes(frame)) / 32768.)
+        .collect();
+    let rate = env::var("VOAI_QA_RATE").unwrap().parse().unwrap();
+    (samples, rate)
 }
 
 #[test]
@@ -51,14 +70,7 @@ fn recorded_speech_reaches_test_field() {
             "Translate the user's text into English. Return only the translation.".into(),
         )
         .unwrap();
-    let bytes = fs::read(fixture_path("VOAI_QA_PCM")).unwrap();
-    let (frames, remainder) = bytes.as_chunks::<2>();
-    assert!(remainder.is_empty());
-    let samples: Vec<_> = frames
-        .iter()
-        .map(|&frame| f32::from(i16::from_le_bytes(frame)) / 32768.)
-        .collect();
-    let rate = env::var("VOAI_QA_RATE").unwrap().parse().unwrap();
+    let (samples, rate) = input();
     let start = |session: &mut Session| {
         let (recording, eof) = voai_speech::start_fixture(
             fixture_path("VOAI_QA_WHISPER"),
@@ -73,25 +85,34 @@ fn recorded_speech_reaches_test_field() {
     };
 
     let mut session = Session::default();
+    let started = Instant::now();
     let eof = start(&mut session);
+    let mut first_partial = None;
     let mut all_samples = false;
     let mut heard = false;
     tick_until(&mut session, &store, |s| {
         assert!(s.phase == Phase::Listening && s.result.is_none());
         all_samples |= eof.try_recv().is_ok();
         heard |= s.level > 0.;
-        all_samples && heard && !s.text.is_empty()
+        if !s.text.is_empty() {
+            first_partial.get_or_insert_with(|| started.elapsed());
+        }
+        all_samples && heard && first_partial.is_some()
     });
-    println!("Live partial: {}", session.text);
+    println!("First live partial after {:?}", first_partial.unwrap());
+    let released = Instant::now();
     session.finish();
     assert!(session.phase == Phase::Finishing);
     tick_until(&mut session, &store, |s| s.phase == Phase::Editing);
-    println!("Final transcript: {}", session.text);
-    assert!(session.text.to_lowercase().contains("пятниц"));
+    println!("Final transcript {:?} after release", released.elapsed());
+    assert_phrase_boundaries(&session.text);
     tick_until(&mut session, &store, |s| s.result.is_some());
     assert!(session.phase == Phase::Idle);
     let (_, delivered) = session.result.take().unwrap();
-    println!("Test field received: {delivered}");
+    println!(
+        "Test field received edited text {:?} after release",
+        released.elapsed()
+    );
     assert!(delivered.to_ascii_lowercase().contains("friday"));
     assert!(!delivered.to_lowercase().contains("пятниц"));
     session.tick(&store, true);
@@ -107,4 +128,49 @@ fn recorded_speech_reaches_test_field() {
     session.tick(&store, true);
     assert!(session.phase == Phase::Idle && session.result.is_none() && session.text.is_empty());
     println!("Cancelled live session discarded");
+}
+
+#[test]
+#[ignore = "requires the bundled Whisper, local weights and the Russian speech fixture"]
+fn stalled_input_preserves_recorded_words() {
+    let (samples, rate) = input();
+    let (recording, eof) = voai_speech::start_fixture(
+        fixture_path("VOAI_QA_WHISPER"),
+        Some("ru".into()),
+        fixture_path("VOAI_QA_WORKER"),
+        samples,
+        rate,
+    )
+    .unwrap();
+    eof.recv_timeout(Duration::from_secs(35)).unwrap();
+    // A disappearing default Core Audio input can stop calling back without an error.
+    let stalled = Instant::now();
+    let deadline = stalled + Duration::from_secs(9);
+    loop {
+        match recording.try_event() {
+            Some(Event::Interrupted(_)) => break,
+            Some(Event::Error(reason)) => panic!("{reason}"),
+            _ => (),
+        }
+        assert!(
+            Instant::now() < deadline,
+            "No input-stall notification after 9 seconds"
+        );
+        thread::sleep(Duration::from_millis(15));
+    }
+    println!("Input stall reported after {:?}", stalled.elapsed());
+    recording.finish();
+    let deadline = Instant::now() + Duration::from_secs(90);
+    loop {
+        match recording.try_event() {
+            Some(Event::Final(text)) => {
+                assert_phrase_boundaries(&text);
+                break;
+            }
+            Some(Event::Error(reason)) => panic!("{reason}"),
+            _ => (),
+        }
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(15));
+    }
 }

@@ -1,6 +1,48 @@
 use super::*;
 
 impl Settings {
+    fn speech_model(&self, p: Palette, cx: &Context<Self>) -> Div {
+        let models = self.snapshot.models.iter().filter(|m| !m.text_model);
+        let selected = models
+            .clone()
+            .find(|m| matches!(m.state, ModelState::Selected));
+        let downloading = models.clone().find_map(|m| match &m.state {
+            ModelState::Downloading { received } => Some(format!(
+                "{} · загружено {} из {}",
+                m.name,
+                bytes(*received),
+                bytes(m.bytes)
+            )),
+            _ => None,
+        });
+        let (detail, action) = if let Some(m) = selected {
+            (m.name.clone(), button("speech-model", "Сменить", p))
+        } else if let Some(progress) = downloading {
+            (progress, button("speech-model", "Открыть модели", p))
+        } else {
+            (
+                if models
+                    .clone()
+                    .any(|m| matches!(m.state, ModelState::Installed))
+                {
+                    "Выберите одну из установленных моделей."
+                } else {
+                    "Скачайте из каталога или подключите файл Whisper."
+                }
+                .into(),
+                primary_button("speech-model", "Выбрать модель", p),
+            )
+        };
+        Self::setting(
+            p,
+            "Речевая модель",
+            &detail,
+            action.on_click(
+                cx.listener(|this, _, window, cx| this.show_dictation_setup(true, window, cx)),
+            ),
+        )
+    }
+
     fn permission(&self, allowed: bool, mic: bool, p: Palette, cx: &Context<Self>) -> AnyElement {
         if allowed {
             row()
@@ -52,7 +94,7 @@ impl Settings {
                     .w_full()
                     .justify_between()
                     .gap_3()
-                    .p(px(14.))
+                    .p(px(12.))
                     .mb(px(6.))
                     .rounded(px(8.))
                     .bg(p.side)
@@ -109,6 +151,7 @@ impl Settings {
                             })),
                     ),
             )
+            .child(self.speech_model(p, cx))
             .child(Self::setting_row(
                 p,
                 "Микрофон",
@@ -164,6 +207,6 @@ impl Settings {
                 self.permission(s.access_allowed, false, p, cx),
             ))
             .child(group_title("Пробная диктовка", p))
-            .child(Input::new(&self.test).h(px(66.)).w_full())
+            .child(Input::new(&self.test).h(px(58.)).w_full())
     }
 }

@@ -1,6 +1,49 @@
 use super::*;
 
 impl Settings {
+    pub(super) fn save_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let secret = self.key.read(cx).value();
+        if secret.trim().is_empty() || self.page != Page::Processing {
+            return;
+        }
+        let current = self.engine.borrow().snapshot();
+        let command = match self.snapshot.mode {
+            Mode::Cloud
+                if current.mode == Mode::Cloud && current.provider == self.snapshot.provider =>
+            {
+                Command::SaveKey(secret.to_string())
+            }
+            Mode::Server
+                if current.mode == Mode::Server
+                    && self.show_server_key
+                    && voai_models::normalize_server_url(&self.server_url.read(cx).value())
+                        .is_ok_and(|url| url == current.server_url) =>
+            {
+                Command::SaveServerKey(secret.to_string())
+            }
+            _ => return,
+        };
+        if self.engine.borrow_mut().try_dispatch(command) {
+            self.key.update(cx, |key, cx| key.set_value("", window, cx));
+        }
+    }
+
+    pub(super) fn discover_server(&self, cx: &Context<Self>) {
+        let draft = self.server_url.read(cx).value();
+        if !self.snapshot.server_loading && voai_models::normalize_server_url(&draft).is_ok() {
+            self.send(Command::DiscoverServer(draft.to_string()));
+        }
+    }
+
+    pub(super) fn save_prompt(&self, cx: &Context<Self>) {
+        let draft = self.prompt.read(cx).value();
+        if draft.as_str() != self.snapshot.processing_prompt
+            && voai_models::validate_processing_prompt(&draft).is_ok()
+        {
+            self.send(Command::SetProcessingPrompt(draft.to_string()));
+        }
+    }
+
     pub(super) fn processing(&self, p: Palette, cx: &mut Context<Self>) -> Div {
         let s = &self.snapshot;
         let modes = [Mode::Off, Mode::Local, Mode::Server, Mode::Cloud];
@@ -158,14 +201,7 @@ impl Settings {
                 .child(
                     button("save-key", "Сохранить", p)
                         .disabled(blank)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            let secret = this.key.read(cx).value().to_string();
-                            if secret.trim().is_empty() {
-                                return;
-                            }
-                            this.send(command(secret));
-                            this.key.update(cx, |key, cx| key.set_value("", window, cx));
-                        })),
+                        .on_click(cx.listener(|this, _, window, cx| this.save_key(window, cx))),
                 )
                 .when(has_key, |r| {
                     r.child(button("delete-key", "Удалить", p).on_click(
@@ -178,8 +214,8 @@ impl Settings {
     fn server_processor(&self, p: Palette, cx: &Context<Self>) -> Div {
         let s = &self.snapshot;
         let draft = self.server_url.read(cx).value();
-        let saved =
-            voai_models::normalize_server_url(draft.as_str()).is_ok_and(|url| url == s.server_url);
+        let address = voai_models::normalize_server_url(&draft);
+        let saved = address.as_ref().is_ok_and(|url| url == &s.server_url);
         let mut panel = col()
             .mt_3()
             .gap_2()
@@ -203,13 +239,15 @@ impl Settings {
                             },
                             p,
                         )
-                        .disabled(s.server_loading || draft.trim().is_empty())
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.send(Command::DiscoverServer(
-                                this.server_url.read(cx).value().to_string(),
-                            ))
-                        })),
+                        .disabled(s.server_loading || address.is_err())
+                        .on_click(cx.listener(|this, _, _, cx| this.discover_server(cx))),
                     ),
+            )
+            .children(
+                address
+                    .err()
+                    .filter(|_| !draft.trim().is_empty())
+                    .map(|e| text(e.to_string(), 12., p.error)),
             )
             .child(
                 row()
@@ -255,7 +293,7 @@ impl Settings {
             panel = panel.child(self.secret_row(true, p, cx));
         }
         if saved && !s.server_error.is_empty() {
-            panel = panel.child(text(s.server_error.clone(), 12., rgb(0xffa198).into()));
+            panel = panel.child(text(s.server_error.clone(), 12., p.error));
         }
         if saved && (!s.server_models.is_empty() || !s.server_model.is_empty()) {
             let title = if s.server_model.is_empty() {
@@ -290,15 +328,22 @@ impl Settings {
     fn prompt_editor(&self, p: Palette, cx: &Context<Self>) -> Div {
         let draft = self.prompt.read(cx).value();
         let changed = draft.as_str() != self.snapshot.processing_prompt;
-        let limit = voai_models::MAX_PROMPT_BYTES;
-        let invalid = draft.trim().is_empty() || draft.len() > limit;
+        let error = voai_models::validate_processing_prompt(&draft).err();
+        let can_save = changed && error.is_none();
         let restoring = draft.as_str() != voai_models::DEFAULT_PROCESSING_PROMPT
             || self.snapshot.processing_prompt != voai_models::DEFAULT_PROCESSING_PROMPT;
         col()
             .mt(px(19.))
             .gap_2()
-            .child(label("Инструкция для обработки", p.ink))
+            .child(
+                row()
+                    .justify_between()
+                    .gap_2()
+                    .child(label("Инструкция для обработки", p.ink))
+                    .when(changed, |r| r.child(text("Не сохранено", 12., p.muted))),
+            )
             .child(Input::new(&self.prompt).h(px(110.)).w_full())
+            .children(error.map(|e| text(e.to_string(), 12., p.error)))
             .child(
                 row()
                     .justify_between()
@@ -322,29 +367,19 @@ impl Settings {
                             })),
                     )
                     .child(
-                        row()
-                            .gap_2()
-                            .when(invalid, |r| {
-                                r.child(text(
-                                    if draft.trim().is_empty() {
-                                        "Введите инструкцию".to_owned()
-                                    } else {
-                                        format!("Максимум {limit} байт")
-                                    },
-                                    12.,
-                                    p.muted,
-                                ))
-                            })
-                            .child(
-                                primary_button("save-prompt", "Сохранить", p)
-                                    .disabled(!changed || invalid)
-                                    .when(!changed || invalid, |b| b.opacity(0.55))
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.send(Command::SetProcessingPrompt(
-                                            this.prompt.read(cx).value().to_string(),
-                                        ))
-                                    })),
-                            ),
+                        primary_button(
+                            "save-prompt",
+                            if changed {
+                                "Сохранить"
+                            } else {
+                                "Сохранено"
+                            },
+                            p,
+                        )
+                        .tooltip("Сохранить инструкцию (⌘S)")
+                        .disabled(!can_save)
+                        .when(!can_save, |b| b.opacity(0.55))
+                        .on_click(cx.listener(|this, _, _, cx| this.save_prompt(cx))),
                     ),
             )
     }

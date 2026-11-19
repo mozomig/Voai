@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-use crate::{MAX_SAMPLES, RATE};
+use crate::{MAX_SAMPLES, MIN_SAMPLES, RATE};
 
 const PROTOCOL: &[u8; 8] = b"VOAIS001";
 const MAX_REPLY: usize = 1 << 20;
@@ -169,7 +169,7 @@ fn decode(
     samples: &[f32],
     language: Option<&str>,
 ) -> Result<String, String> {
-    if samples.len() < RATE / 8
+    if samples.len() < MIN_SAMPLES
         || !samples.chunks(160).any(|frame| {
             let energy: f32 = frame.iter().map(|v| v * v).sum();
             energy / frame.len() as f32 > 1e-7

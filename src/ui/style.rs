@@ -33,6 +33,7 @@ pub struct Palette {
     pub ink: Hsla,
     pub muted: Hsla,
     pub accent: Hsla,
+    pub error: Hsla,
     pub soft: Hsla,
     pub rule: Hsla,
     pub surface: Hsla,
@@ -47,6 +48,7 @@ impl Palette {
             ink: rgb(0xe6edf3).into(),
             muted: rgb(0x9ba7b4).into(),
             accent: rgb(0x58a6ff).into(),
+            error: rgb(0xffa198).into(),
             soft: rgb(0x172c44).into(),
             rule: rgb(0x30363d).into(),
         }

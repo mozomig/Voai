@@ -156,11 +156,18 @@ impl Settings {
             ModelState::Available => action = Some(("Скачать", Command::Download)),
             ModelState::Installed => action = Some(("Выбрать", Command::SelectModel)),
             ModelState::Failed(reason) => {
-                details = details.child(text(reason.clone(), 12., rgb(0xffa198).into()));
-                action = Some(("Повторить", Command::Download));
+                details = details.child(text(reason.clone(), 12., p.error));
+                action = Some((
+                    if m.on_disk > 0 {
+                        "Продолжить"
+                    } else {
+                        "Повторить"
+                    },
+                    Command::Download,
+                ));
             }
             ModelState::Unavailable(reason) => {
-                details = details.child(text(reason.clone(), 12., rgb(0xffa198).into()));
+                details = details.child(text(reason.clone(), 12., p.error));
             }
             ModelState::Downloading { received } => {
                 let fraction = *received as f32 / m.bytes.max(1) as f32;

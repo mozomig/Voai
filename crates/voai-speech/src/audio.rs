@@ -63,7 +63,7 @@ impl Microphone {
         })
     }
 
-    #[cfg(feature = "test-fixtures")]
+    #[cfg(any(test, feature = "test-fixtures"))]
     pub(super) fn fixture(
         pcm: Vec<f32>,
         rate: usize,
@@ -115,7 +115,7 @@ impl Microphone {
         }
     }
 
-    pub(super) fn drain(&mut self, output: &mut Vec<f32>) -> Result<(), String> {
+    pub(super) fn drain(&mut self, output: &mut Vec<f32>) -> Result<bool, String> {
         let available = self.samples.slots();
         if available != 0 {
             let chunk = self
@@ -127,7 +127,7 @@ impl Microphone {
             self.converter.push(right, output)?;
             chunk.commit_all();
         }
-        Ok(())
+        Ok(available != 0)
     }
 
     pub(super) fn finish(mut self, output: &mut Vec<f32>) -> Result<(), String> {

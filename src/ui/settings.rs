@@ -94,21 +94,31 @@ impl Settings {
         });
         let server_url =
             cx.new(|cx| InputState::new(window, cx).default_value(snapshot.server_url.clone()));
-        for input in [&prompt, &key] {
-            cx.subscribe(input, |_, _, event, cx| {
-                if matches!(event, InputEvent::Change) {
-                    cx.notify();
-                }
-            })
-            .detach();
-        }
-        cx.subscribe_in(&server_url, window, |this, _, event, window, cx| {
+        cx.subscribe(&prompt, |_, _, event, cx| {
             if matches!(event, InputEvent::Change) {
-                this.show_server_key = false;
-                this.key.update(cx, |key, cx| key.set_value("", window, cx));
                 cx.notify();
             }
         })
+        .detach();
+        cx.subscribe_in(&key, window, |this, _, event, window, cx| match event {
+            InputEvent::PressEnter { .. } => this.save_key(window, cx),
+            InputEvent::Change => cx.notify(),
+            _ => {}
+        })
+        .detach();
+        cx.subscribe_in(
+            &server_url,
+            window,
+            |this, _, event, window, cx| match event {
+                InputEvent::Change => {
+                    this.show_server_key = false;
+                    this.key.update(cx, |key, cx| key.set_value("", window, cx));
+                    cx.notify();
+                }
+                InputEvent::PressEnter { .. } => this.discover_server(cx),
+                _ => {}
+            },
+        )
         .detach();
         let focus = cx.focus_handle();
         cx.on_blur(&focus, window, |this, _, cx| this.end_capture(cx))
@@ -176,12 +186,19 @@ impl Settings {
     }
 
     pub(super) fn sync(&mut self, snapshot: Snapshot, window: &mut Window, cx: &mut Context<Self>) {
-        if self.snapshot.processing_prompt != snapshot.processing_prompt {
+        if self.snapshot.processing_prompt != snapshot.processing_prompt
+            && self.prompt.read(cx).value().as_str() == self.snapshot.processing_prompt
+        {
             self.prompt.update(cx, |input, cx| {
                 input.set_value(snapshot.processing_prompt.clone(), window, cx)
             });
         }
-        if self.snapshot.server_url != snapshot.server_url {
+        let draft = self.server_url.read(cx).value();
+        if self.snapshot.server_url != snapshot.server_url
+            && (draft.as_str() == self.snapshot.server_url
+                || voai_models::normalize_server_url(&draft)
+                    .is_ok_and(|url| url == snapshot.server_url))
+        {
             self.server_url.update(cx, |input, cx| {
                 input.set_value(snapshot.server_url.clone(), window, cx)
             });
@@ -203,6 +220,21 @@ impl Settings {
         }
         self.snapshot = snapshot;
         cx.notify();
+    }
+
+    pub(in crate::ui) fn show_dictation_setup(
+        &mut self,
+        models: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if models {
+            self.text_models = false;
+            self.file_dialog_error = None;
+            self.navigate(Page::Models, window, cx);
+        } else {
+            self.navigate(Page::Dictation, window, cx);
+        }
     }
 
     fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
@@ -232,6 +264,16 @@ impl Settings {
 
     fn hotkey_input(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if !self.capture {
+            let key = &event.keystroke;
+            if self.page == Page::Processing
+                && key.modifiers == Modifiers::command()
+                && key.key == "s"
+                && self.prompt.read(cx).focus_handle(cx).is_focused(window)
+            {
+                window.prevent_default();
+                cx.stop_propagation();
+                self.save_prompt(cx);
+            }
             return;
         }
         window.prevent_default();
@@ -310,45 +352,47 @@ impl Settings {
                 }),
             )
             .child(div().flex_1())
-            .when(self.page != Page::Models || self.text_models, |d| {
-                d.child(
-                    col()
-                        .mx(px(6.))
-                        .pt_3()
-                        .border_t_1()
-                        .border_color(p.rule)
-                        .child(text("Речевая модель", 11., p.muted))
-                        .child(
-                            Button::new("current-speech")
-                                .ghost()
-                                .small()
-                                .justify_start()
-                                .w_full()
-                                .px_0()
-                                .child(
-                                    row()
-                                        .w_full()
-                                        .min_w_0()
-                                        .justify_between()
-                                        .child(
-                                            text(
-                                                speech
-                                                    .map(|m| m.name.clone())
-                                                    .unwrap_or_else(|| "Выбрать модель".into()),
-                                                12.,
-                                                p.accent,
+            .when(
+                self.page == Page::Processing || (self.page == Page::Models && self.text_models),
+                |d| {
+                    d.child(
+                        col()
+                            .mx(px(6.))
+                            .pt_3()
+                            .border_t_1()
+                            .border_color(p.rule)
+                            .child(text("Речевая модель", 11., p.muted))
+                            .child(
+                                Button::new("current-speech")
+                                    .ghost()
+                                    .small()
+                                    .justify_start()
+                                    .w_full()
+                                    .px_0()
+                                    .child(
+                                        row()
+                                            .w_full()
+                                            .min_w_0()
+                                            .justify_between()
+                                            .child(
+                                                text(
+                                                    speech
+                                                        .map(|m| m.name.clone())
+                                                        .unwrap_or_else(|| "Выбрать модель".into()),
+                                                    12.,
+                                                    p.accent,
+                                                )
+                                                .truncate(),
                                             )
-                                            .truncate(),
-                                        )
-                                        .child(icon("arrow", p.accent, 13.)),
-                                )
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.text_models = false;
-                                    this.navigate(Page::Models, window, cx)
-                                })),
-                        ),
-                )
-            })
+                                            .child(icon("arrow", p.accent, 13.)),
+                                    )
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.show_dictation_setup(true, window, cx)
+                                    })),
+                            ),
+                    )
+                },
+            )
     }
 
     fn setting(p: Palette, title: &str, detail: &str, control: impl IntoElement) -> Div {
@@ -365,7 +409,7 @@ impl Settings {
             .w_full()
             .gap_3()
             .justify_between()
-            .py(px(9.))
+            .py(px(7.))
             .border_b_1()
             .border_color(p.rule)
             .child(
@@ -448,7 +492,7 @@ impl Settings {
 fn group_title(title: &'static str, p: Palette) -> Div {
     text(title, 12., p.ink)
         .font_weight(FontWeight::SEMIBOLD)
-        .mt_4()
+        .mt(px(14.))
         .mb_1()
 }
 
@@ -500,11 +544,11 @@ impl Render for Settings {
                             .size_full()
                             .overflow_y_scroll()
                             .px(px(28.))
-                            .py(px(22.))
+                            .py(px(20.))
                             .child(
                                 text(self.page.title(), 24., p.ink)
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .mb(px(18.)),
+                                    .mb(px(16.)),
                             )
                             .when(
                                 !self.snapshot.message.is_empty()

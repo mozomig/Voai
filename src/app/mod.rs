@@ -85,7 +85,7 @@ impl Backend {
         if settings.mode == Mode::Server {
             server.request(settings.server_url.clone(), &notify);
         }
-        Ok(Self {
+        let mut backend = Self {
             _instance: lock,
             dir,
             settings,
@@ -105,11 +105,13 @@ impl Backend {
             message: String::new(),
             has_key,
             server,
-            mic: false,
+            mic: macos::microphone_allowed(),
             ax: macos::trusted(),
             refreshed: Instant::now(),
             last_tick: SystemTime::now(),
-        })
+        };
+        backend.refresh_devices();
+        Ok(backend)
     }
 
     pub fn wake_signal(&self) -> async_channel::Receiver<()> {
@@ -154,10 +156,17 @@ impl Backend {
     }
 
     pub fn dispatch(&mut self, command: Command) {
-        if let Err(e) = self.handle(command) {
-            self.message = e;
+        self.try_dispatch(command);
+    }
+
+    pub fn try_dispatch(&mut self, command: Command) -> bool {
+        let result = self.handle(command);
+        let succeeded = result.is_ok();
+        if let Err(message) = result {
+            self.message = message;
         }
         let _ = self.notify.try_send(());
+        succeeded
     }
 
     fn handle(&mut self, command: Command) -> Result<(), String> {
@@ -463,13 +472,21 @@ impl Backend {
             }
         }
         self.server.poll(&self.notify);
-        if let Some(rx) = &self.device_list
-            && let Ok(devices) = rx.try_recv()
-        {
-            self.device_list = None;
-            match devices {
-                Ok(list) => self.devices = list,
-                Err(reason) => self.message = reason,
+        if let Some(rx) = &self.device_list {
+            use std::sync::mpsc::TryRecvError;
+            match rx.try_recv() {
+                Ok(result) => {
+                    self.device_list = None;
+                    match result {
+                        Ok(devices) => self.devices = devices,
+                        Err(message) => self.message = message,
+                    }
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.device_list = None;
+                    self.message = "Не удалось обновить список микрофонов.".into();
+                }
+                Err(TryRecvError::Empty) => {}
             }
         }
         if self.refreshed.elapsed() >= Duration::from_secs(1) {

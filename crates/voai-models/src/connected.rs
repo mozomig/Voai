@@ -91,8 +91,15 @@ impl ConnectedModel {
     }
 
     pub fn resolve(&self) -> Result<&Path> {
-        let meta = fs::symlink_metadata(&self.path)
-            .context("Файл модели недоступен. Проверьте путь и подключение диска")?;
+        let meta = fs::symlink_metadata(&self.path).map_err(|err| match err.kind() {
+            std::io::ErrorKind::NotFound => anyhow::anyhow!(
+                "Файл модели не найден. Подключите диск или выберите файл повторно."
+            ),
+            std::io::ErrorKind::PermissionDenied => {
+                anyhow::anyhow!("Нет доступа к файлу модели. Проверьте разрешения на чтение.")
+            }
+            _ => anyhow::anyhow!("Файл модели недоступен. Проверьте диск и попробуйте снова."),
+        })?;
         ensure!(
             FileStamp::read(&meta)? == self.stamp,
             "Файл модели изменился. Подключите его повторно"

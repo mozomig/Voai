@@ -16,6 +16,8 @@ use std::{
 pub use worker::{validate_model, worker_main};
 
 const RATE: usize = 16_000;
+const MIN_SAMPLES: usize = RATE / 8;
+const INPUT_TIMEOUT: Duration = Duration::from_secs(7);
 const MAX_SAMPLES: usize = RATE * 60 * 5;
 const RECORDING: u8 = 0;
 const FINISHING: u8 = 1;
@@ -162,14 +164,16 @@ impl Session<'_> {
             return Ok(String::new());
         }
         let mut mic = open(self.state.clone())?;
-        let mut worker = Some(self.worker()?);
+        let mut worker = None;
         let mut pcm = Vec::with_capacity(RATE * 5);
-        let opened = Instant::now();
+        let mut last_input = Instant::now();
         let mut last_partial = 0;
         let mut pending = None;
         while self.state.load(Ordering::Acquire) == RECORDING {
             let previous = pcm.len();
-            mic.drain(&mut pcm)?;
+            if mic.drain(&mut pcm)? {
+                last_input = Instant::now();
+            }
             let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
             if pcm.len() > previous {
                 let samples = &pcm[previous..];
@@ -178,7 +182,15 @@ impl Session<'_> {
             }
             drop(events);
             let reason = mic.interruption().or_else(|| {
-                (pcm.len() >= MAX_SAMPLES).then_some("Достигнут предел записи в пять минут")
+                if last_input.elapsed() >= INPUT_TIMEOUT {
+                    Some(if pcm.is_empty() {
+                        "Нет сигнала от микрофона. Проверьте разрешение и устройство."
+                    } else {
+                        "Микрофон перестал передавать звук"
+                    })
+                } else {
+                    (pcm.len() >= MAX_SAMPLES).then_some("Достигнут предел записи в пять минут")
+                }
             });
             if let Some(reason) = reason {
                 mic.stop();
@@ -196,8 +208,10 @@ impl Session<'_> {
                 }
                 break;
             }
-            if pcm.is_empty() && opened.elapsed() > Duration::from_secs(7) {
-                return Err("Нет сигнала от микрофона. Проверьте разрешение и устройство.".into());
+            // A tap can end before there is decodable audio. Leave any warm worker
+            // untouched until this recording actually needs the model.
+            if previous < MIN_SAMPLES && pcm.len() >= MIN_SAMPLES {
+                worker = Some(self.worker()?);
             }
             if let Some(active) = &worker {
                 let update = self.update_partial(active, &pcm, &mut last_partial, &mut pending);
@@ -214,7 +228,7 @@ impl Session<'_> {
         }
         mic.finish(&mut pcm)?;
         pcm.truncate(MAX_SAMPLES);
-        if pcm.len() < RATE / 8 {
+        if pcm.len() < MIN_SAMPLES {
             return Ok(String::new());
         }
         if let Some(active) = worker
@@ -290,6 +304,33 @@ impl Session<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn brief_press_finishes_without_starting_a_decoder() {
+        let (eof, exhausted) = std::sync::mpsc::channel();
+        let recording = start_with_source(
+            std::env::current_exe().unwrap(),
+            None,
+            PathBuf::from("/nonexistent-voai-worker"),
+            move |state| audio::Microphone::fixture(vec![0.25; RATE / 12], RATE, state, eof),
+        )
+        .unwrap();
+        exhausted.recv_timeout(Duration::from_secs(3)).unwrap();
+        recording.finish();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            match recording.try_event() {
+                Some(Event::Final(text)) => {
+                    assert!(text.is_empty());
+                    break;
+                }
+                Some(Event::Error(reason)) => panic!("Unnecessary worker startup: {reason}"),
+                _ => (),
+            }
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
 
     #[test]
     fn cancellation_hides_late_worker_reply_and_cannot_be_reversed() {
