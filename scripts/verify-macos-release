@@ -1,0 +1,23 @@
+#!/bin/bash
+# Check the delivered archive, including the nested helper and app version.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+archive="${1:-target/dist/release/Voai.zip}"
+stage="$(mktemp -d)"
+trap 'rm -rf "$stage"' EXIT
+ditto -x -k "$archive" "$stage"
+app="$stage/Voai.app"
+codesign --verify --strict --deep "$app"
+plutil -lint "$app/Contents/Info.plist"
+version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")"
+for name in voai voai-text-helper; do
+    lipo "$app/Contents/MacOS/$name" -verify_arch arm64
+done
+[[ "$("$app/Contents/MacOS/voai" --version)" == "Voai $version" ]]
+if [[ -n "${VOAI_PREVIOUS_APP:-}" ]]; then
+    requirement="$(codesign -d -r- "$VOAI_PREVIOUS_APP" 2>&1 | sed -n 's/^.*designated => //p')"
+    [[ -n "$requirement" ]]
+    codesign --verify --strict "-R=$requirement" "$app"
+fi
+printf 'Verified Voai %s, arm64.\n' "$version"
+shasum -a 256 "$archive"

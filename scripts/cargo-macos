@@ -1,0 +1,24 @@
+#!/bin/bash
+# Keep bindgen and CMake on Apple's SDK even on Macs with an Intel Homebrew.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+if [[ "$(uname -s)" != Darwin ]]; then echo "This build requires macOS." >&2; exit 1; fi
+if [[ "$(rustc -vV)" != *"host: aarch64-apple-darwin"* ]]; then
+    if ! command -v rustup >/dev/null; then echo "Install native arm64 Rust first." >&2; exit 1; fi
+    native_rustc="$(rustup which --toolchain stable-aarch64-apple-darwin rustc)"
+    export PATH="$(dirname "$native_rustc"):$PATH"
+fi
+developer_dir="$(xcode-select -p)"
+export LIBCLANG_PATH="${LIBCLANG_PATH:-$developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib}"
+export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+export CC="${CC:-$(xcrun -f clang)}"
+export CXX="${CXX:-$(xcrun -f clang++)}"
+if ! xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+    export TOOLCHAINS="${TOOLCHAINS:-com.apple.dt.toolchain.Metal}"
+    xcrun -sdk macosx metal --version >/dev/null
+fi
+export CMAKE_OSX_ARCHITECTURES=arm64
+export GGML_NATIVE=OFF
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target/native}"
+exec cargo "$@"

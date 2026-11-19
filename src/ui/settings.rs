@@ -1,0 +1,536 @@
+mod dictation;
+mod models;
+mod processing;
+
+use gpui::{prelude::*, *};
+use gpui_component::{
+    Disableable, Sizable, TitleBar,
+    button::{Button, ButtonVariants},
+    input::{Input, InputEvent, InputState},
+    menu::{DropdownMenu, PopupMenuItem},
+};
+
+use super::{Engine, style::*};
+use crate::app::{Command, Mode, ModelRow, ModelState, Snapshot};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Page {
+    Dictation,
+    Models,
+    Processing,
+}
+
+impl Page {
+    fn title(self) -> &'static str {
+        match self {
+            Self::Dictation => "Диктовка",
+            Self::Models => "Модели",
+            Self::Processing => "Обработка",
+        }
+    }
+    fn icon(self) -> &'static str {
+        match self {
+            Self::Dictation => "mic",
+            Self::Models => "models",
+            Self::Processing => "sliders",
+        }
+    }
+}
+
+pub(super) fn mode_title(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Off => "Выкл.",
+        Mode::Local => "Файл модели",
+        Mode::Server => "Локальный сервер",
+        Mode::Cloud => "Облако",
+    }
+}
+
+pub(super) struct Settings {
+    engine: Engine,
+    snapshot: Snapshot,
+    page: Page,
+    text_models: bool,
+    capture: bool,
+    focus: FocusHandle,
+    test: Entity<InputState>,
+    key: Entity<InputState>,
+    prompt: Entity<InputState>,
+    prompt_needs_layout: bool,
+    server_url: Entity<InputState>,
+    show_server_key: bool,
+    file_dialog_error: Option<String>,
+    last_test: Option<u64>,
+    selection_anchor: Option<(u64, std::ops::Range<usize>)>,
+    edit_revision: u64,
+    test_ready: bool,
+    shortcut_error: Option<&'static str>,
+}
+
+impl Settings {
+    pub(super) fn new(engine: Engine, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let snapshot = engine.borrow().snapshot();
+        let test = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line(true)
+                .placeholder("Поставьте курсор и удерживайте сочетание")
+        });
+        let key = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .placeholder("Введите ключ")
+        });
+        cx.subscribe_in(&test, window, |this, _, event, _, _| match event {
+            InputEvent::Change => this.edit_revision = this.edit_revision.wrapping_add(1),
+            InputEvent::Blur => this.set_test_ready(false),
+            _ => {}
+        })
+        .detach();
+        let prompt = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line(true)
+                .soft_wrap(true)
+                .default_value(snapshot.processing_prompt.clone())
+        });
+        let server_url =
+            cx.new(|cx| InputState::new(window, cx).default_value(snapshot.server_url.clone()));
+        for input in [&prompt, &key] {
+            cx.subscribe(input, |_, _, event, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            })
+            .detach();
+        }
+        cx.subscribe_in(&server_url, window, |this, _, event, window, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.show_server_key = false;
+                this.key.update(cx, |key, cx| key.set_value("", window, cx));
+                cx.notify();
+            }
+        })
+        .detach();
+        let focus = cx.focus_handle();
+        cx.on_blur(&focus, window, |this, _, cx| this.end_capture(cx))
+            .detach();
+        cx.observe_window_activation(window, |this, window, cx| {
+            if !window.is_window_active() {
+                this.end_capture(cx);
+            }
+        })
+        .detach();
+        window.focus(&focus);
+        Self {
+            engine,
+            last_test: snapshot.test_result.as_ref().map(|(id, _)| *id),
+            snapshot,
+            page: Page::Dictation,
+            text_models: false,
+            capture: false,
+            focus,
+            test,
+            key,
+            prompt,
+            prompt_needs_layout: true,
+            server_url,
+            show_server_key: false,
+            file_dialog_error: None,
+            shortcut_error: None,
+            selection_anchor: None,
+            edit_revision: 0,
+            test_ready: false,
+        }
+    }
+
+    fn send(&self, command: Command) {
+        self.engine.borrow_mut().dispatch(command);
+    }
+
+    fn set_test_ready(&mut self, ready: bool) {
+        if self.test_ready != ready {
+            self.test_ready = ready;
+            self.send(Command::TestFocus(ready));
+        }
+    }
+
+    /// Verify the same edit revision and UTF-16 selection just before the
+    /// backend processes an input event or delivers a completed phrase.
+    pub(super) fn check_test_target(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let focused = self.page == Page::Dictation
+            && window.is_window_active()
+            && self.test.read(cx).focus_handle(cx).is_focused(window);
+        let selection = if focused {
+            self.test
+                .update(cx, |state, cx| state.selected_text_range(false, window, cx))
+                .map(|selected| (self.edit_revision, selected.range))
+        } else {
+            None
+        };
+        if matches!(
+            self.snapshot.phase,
+            crate::app::Phase::Idle | crate::app::Phase::RecoverFocus | crate::app::Phase::Error
+        ) {
+            self.selection_anchor.clone_from(&selection);
+        }
+        self.set_test_ready(selection.is_some() && selection == self.selection_anchor);
+    }
+
+    pub(super) fn sync(&mut self, snapshot: Snapshot, window: &mut Window, cx: &mut Context<Self>) {
+        if self.snapshot.processing_prompt != snapshot.processing_prompt {
+            self.prompt.update(cx, |input, cx| {
+                input.set_value(snapshot.processing_prompt.clone(), window, cx)
+            });
+        }
+        if self.snapshot.server_url != snapshot.server_url {
+            self.server_url.update(cx, |input, cx| {
+                input.set_value(snapshot.server_url.clone(), window, cx)
+            });
+        }
+        if self.snapshot.provider != snapshot.provider
+            || self.snapshot.mode != snapshot.mode
+            || self.snapshot.server_url != snapshot.server_url
+        {
+            self.show_server_key = false;
+            self.key.update(cx, |key, cx| key.set_value("", window, cx));
+        }
+        if let Some((id, phrase)) = &snapshot.test_result
+            && self.last_test != Some(*id)
+        {
+            self.test
+                .update(cx, |test, cx| test.replace(phrase.clone(), window, cx));
+            self.last_test = Some(*id);
+            self.send(Command::TestResultHandled(*id));
+        }
+        self.snapshot = snapshot;
+        cx.notify();
+    }
+
+    fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
+        if self.page != page {
+            self.set_test_ready(false);
+            self.show_server_key = false;
+            self.key.update(cx, |key, cx| key.set_value("", window, cx));
+        }
+        if page == Page::Dictation {
+            self.send(Command::RefreshDevices);
+        }
+        window.focus(&self.focus);
+        self.end_capture(cx);
+        self.page = page;
+        self.prompt_needs_layout = page == Page::Processing;
+        cx.notify();
+    }
+
+    fn end_capture(&mut self, cx: &mut Context<Self>) {
+        if self.capture {
+            self.capture = false;
+            self.shortcut_error = None;
+            self.send(Command::CaptureShortcut(false));
+            cx.notify();
+        }
+    }
+
+    fn hotkey_input(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.capture {
+            return;
+        }
+        window.prevent_default();
+        cx.stop_propagation();
+        let key = &event.keystroke.key;
+        if key == "escape" {
+            self.end_capture(cx);
+        } else {
+            let mods = event.keystroke.modifiers;
+            if !(mods.control || mods.alt || mods.platform) {
+                self.shortcut_error = Some("Добавьте ⌥, ⌘ или ⌃.");
+            } else {
+                let mut parts = Vec::new();
+                for (pressed, label) in [
+                    (mods.control, "Control"),
+                    (mods.alt, "Alt"),
+                    (mods.shift, "Shift"),
+                    (mods.platform, "Super"),
+                ] {
+                    if pressed {
+                        parts.push(label.to_string());
+                    }
+                }
+                parts.push(key.to_ascii_uppercase());
+                self.send(Command::SetShortcut(parts.join("+")));
+                self.end_capture(cx);
+            }
+        }
+        cx.notify();
+    }
+
+    fn sidebar(&self, p: Palette, cx: &mut Context<Self>) -> Div {
+        let speech = self
+            .snapshot
+            .models
+            .iter()
+            .find(|m| !m.text_model && matches!(m.state, ModelState::Selected));
+        col()
+            .w(px(176.))
+            .h_full()
+            .flex_shrink_0()
+            .px(px(10.))
+            .py(px(18.))
+            .gap(px(3.))
+            .bg(p.side)
+            .border_r_1()
+            .border_color(p.rule)
+            .children(
+                [Page::Dictation, Page::Models, Page::Processing].map(|page| {
+                    let selected = page == self.page;
+                    Button::new(page.title())
+                        .ghost()
+                        .w_full()
+                        .justify_start()
+                        .h(px(35.))
+                        .px(px(9.))
+                        .rounded(px(6.))
+                        .when(selected, |b| b.bg(p.soft))
+                        .child(
+                            row()
+                                .gap(px(9.))
+                                .child(icon(
+                                    page.icon(),
+                                    if selected { p.accent } else { p.muted },
+                                    17.,
+                                ))
+                                .child(text(page.title(), 13., p.ink).font_weight(if selected {
+                                    FontWeight::SEMIBOLD
+                                } else {
+                                    FontWeight::NORMAL
+                                })),
+                        )
+                        .on_click(
+                            cx.listener(move |this, _, window, cx| this.navigate(page, window, cx)),
+                        )
+                }),
+            )
+            .child(div().flex_1())
+            .when(self.page != Page::Models || self.text_models, |d| {
+                d.child(
+                    col()
+                        .mx(px(6.))
+                        .pt_3()
+                        .border_t_1()
+                        .border_color(p.rule)
+                        .child(text("Речевая модель", 11., p.muted))
+                        .child(
+                            Button::new("current-speech")
+                                .ghost()
+                                .small()
+                                .justify_start()
+                                .w_full()
+                                .px_0()
+                                .child(
+                                    row()
+                                        .w_full()
+                                        .min_w_0()
+                                        .justify_between()
+                                        .child(
+                                            text(
+                                                speech
+                                                    .map(|m| m.name.clone())
+                                                    .unwrap_or_else(|| "Выбрать модель".into()),
+                                                12.,
+                                                p.accent,
+                                            )
+                                            .truncate(),
+                                        )
+                                        .child(icon("arrow", p.accent, 13.)),
+                                )
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.text_models = false;
+                                    this.navigate(Page::Models, window, cx)
+                                })),
+                        ),
+                )
+            })
+    }
+
+    fn setting(p: Palette, title: &str, detail: &str, control: impl IntoElement) -> Div {
+        Self::setting_row(
+            p,
+            title,
+            (!detail.is_empty()).then(|| text(detail.to_owned(), 12., p.muted)),
+            control,
+        )
+    }
+
+    fn setting_row(p: Palette, title: &str, detail: Option<Div>, control: impl IntoElement) -> Div {
+        row()
+            .w_full()
+            .gap_3()
+            .justify_between()
+            .py(px(9.))
+            .border_b_1()
+            .border_color(p.rule)
+            .child(
+                col()
+                    .flex_1()
+                    .min_w_0()
+                    .gap(px(2.))
+                    .child(label(title.to_owned(), p.ink))
+                    .children(detail),
+            )
+            .child(control)
+    }
+
+    fn picker(
+        &self,
+        id: &'static str,
+        title: String,
+        choices: Vec<(String, String)>,
+        current: String,
+        command: fn(String) -> Command,
+        p: Palette,
+    ) -> impl IntoElement + use<> {
+        let engine = self.engine.clone();
+        Button::new(id)
+            .small()
+            .rounded(px(6.))
+            .bg(p.surface)
+            .border_1()
+            .border_color(p.rule)
+            .child(
+                row()
+                    .gap(px(8.))
+                    .child(text(title, 12., p.ink).max_w(px(230.)).truncate())
+                    .child(icon("chevron", p.muted, 13.)),
+            )
+            .dropdown_menu(move |mut menu, _, _| {
+                for (name, value) in &choices {
+                    let engine = engine.clone();
+                    let value = value.clone();
+                    menu = menu.item(
+                        PopupMenuItem::new(name.clone())
+                            .checked(value == current)
+                            .on_click(move |_, _, _| {
+                                engine.borrow_mut().dispatch(command(value.clone()))
+                            }),
+                    );
+                }
+                menu
+            })
+    }
+
+    fn tabs(
+        &self,
+        p: Palette,
+        options: &[(&'static str, bool)],
+        select: impl Fn(&mut Self, usize, &mut Context<Self>) + Copy + 'static,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        row()
+            .p(px(2.))
+            .gap(px(2.))
+            .bg(p.side)
+            .rounded(px(8.))
+            .border_1()
+            .border_color(p.rule)
+            .children(options.iter().enumerate().map(|(index, (title, active))| {
+                Button::new(*title)
+                    .small()
+                    .ghost()
+                    .label(*title)
+                    .rounded(px(5.))
+                    .text_size(px(12.))
+                    .text_color(if *active { p.ink } else { p.muted })
+                    .when(*active, |b| b.bg(p.surface))
+                    .on_click(cx.listener(move |this, _, _, cx| select(this, index, cx)))
+            }))
+    }
+}
+
+fn group_title(title: &'static str, p: Palette) -> Div {
+    text(title, 12., p.ink)
+        .font_weight(FontWeight::SEMIBOLD)
+        .mt_4()
+        .mb_1()
+}
+
+impl Render for Settings {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.page == Page::Processing && std::mem::take(&mut self.prompt_needs_layout) {
+            // The editor can wrap the initial text once its first frame has a measured width.
+            let prompt = self.prompt.clone();
+            window.on_next_frame(move |window, cx| {
+                prompt.update(cx, |input, cx| input.set_soft_wrap(true, window, cx))
+            });
+        }
+        let p = Palette::dark();
+        let page = match self.page {
+            Page::Dictation => self.dictation(p, cx),
+            Page::Models => self.models(p, cx),
+            Page::Processing => self.processing(p, cx),
+        };
+        div()
+            .size_full()
+            .track_focus(&self.focus)
+            .capture_key_down(cx.listener(Self::hotkey_input))
+            .flex()
+            .flex_col()
+            .bg(p.paper)
+            .text_color(p.ink)
+            .font_family(".SystemUIFont")
+            .text_size(px(14.))
+            .child(
+                TitleBar::new().bg(p.side).child(
+                    row()
+                        .gap(px(8.))
+                        .child(mark(p.accent))
+                        .child(text("Voai", 14., p.ink).font_weight(FontWeight::SEMIBOLD)),
+                ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    .child(self.sidebar(p, cx))
+                    .child(
+                        col()
+                            .id(SharedString::from(format!(
+                                "settings-{}",
+                                self.page.title()
+                            )))
+                            .size_full()
+                            .overflow_y_scroll()
+                            .px(px(28.))
+                            .py(px(22.))
+                            .child(
+                                text(self.page.title(), 24., p.ink)
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .mb(px(18.)),
+                            )
+                            .when(
+                                !self.snapshot.message.is_empty()
+                                    && self.snapshot.phase == crate::app::Phase::Idle,
+                                |d| {
+                                    d.child(
+                                        row()
+                                            .mb_2()
+                                            .p_2()
+                                            .rounded_md()
+                                            .gap_2()
+                                            .bg(p.soft)
+                                            .child(
+                                                text(self.snapshot.message.clone(), 12., p.ink)
+                                                    .flex_1(),
+                                            )
+                                            .child(button("dismiss", "Закрыть", p).on_click(
+                                                cx.listener(|this, _, _, _| {
+                                                    this.send(Command::DismissMessage)
+                                                }),
+                                            )),
+                                    )
+                                },
+                            )
+                            .child(page),
+                    ),
+            )
+    }
+}

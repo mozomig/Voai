@@ -1,0 +1,62 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+profile="${1:-release}"
+flags=()
+case "$profile" in
+    release) flags+=(--release);;
+    debug) ;;
+    *) echo "Usage: scripts/package-macos [debug|release]" >&2; exit 2;;
+esac
+./scripts/cargo-macos build --workspace --locked ${flags[@]+"${flags[@]}"}
+build_dir="${CARGO_TARGET_DIR:-$PWD/target/native}/$profile"
+distribution="${VOAI_DIST_DIR:-$PWD/target/dist/$profile}"
+mkdir -p "$distribution"
+stage="$(mktemp -d "$distribution/.stage.XXXXXXXX")"
+trap 'rm -rf "$stage"' EXIT
+app="$stage/Voai.app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+cp packaging/Info.plist "$app/Contents/Info.plist"
+cp packaging/Voai.icns "$app/Contents/Resources/Voai.icns"
+for binary in voai voai-text-helper; do
+    lipo "$build_dir/$binary" -verify_arch arm64
+    install -m 755 "$build_dir/$binary" "$app/Contents/MacOS/$binary"
+    if otool -L "$build_dir/$binary" | tail -n +2 | awk '{print $1}' | grep -Ev '^(/usr/lib/|/System/Library/)' >&2; then
+        echo "$binary links to a non-system library; package it before shipping." >&2; exit 1
+    fi
+done
+# A repository-local identity keeps macOS privacy grants valid across rebuilds.
+# CI or a distribution build can override it without changing the developer's choice.
+local_identity="$(git config --local --get voai.signingIdentity 2>/dev/null || true)"
+identity="${VOAI_SIGN_IDENTITY:-${local_identity:--}}"
+version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")"
+if [[ "$("$app/Contents/MacOS/voai" --version)" != "Voai $version" ]]; then
+    echo "The Rust package and Info.plist release versions differ." >&2
+    exit 1
+fi
+if [[ "$identity" == "-" ]]; then
+    echo "Using ad hoc signing. Configure voai.signingIdentity to retain macOS permissions across builds." >&2
+fi
+sign=(--force --sign "$identity" --options runtime)
+if [[ "$identity" != "-" ]]; then sign+=(--timestamp); fi
+codesign "${sign[@]}" "$app/Contents/MacOS/voai-text-helper"
+codesign "${sign[@]}" --entitlements packaging/entitlements.plist "$app"
+codesign --verify --deep --strict "$app"
+if [[ -n "${VOAI_NOTARY_PROFILE:-}" ]]; then
+    signing_info="$(codesign -dv --verbose=2 "$app" 2>&1)"
+    if [[ "$signing_info" != *"Authority=Developer ID Application:"* ]]; then
+        echo "Developer ID Application signing is required for notarization." >&2; exit 1
+    fi
+    ditto -c -k --keepParent "$app" "$stage/submit.zip"
+    xcrun notarytool submit "$stage/submit.zip" --keychain-profile "$VOAI_NOTARY_PROFILE" --wait
+    xcrun stapler staple "$app"
+    xcrun stapler validate "$app"
+fi
+ditto -c -k --keepParent "$app" "$stage/Voai.zip"
+if [[ -d "$distribution/Voai.app" ]]; then mv "$distribution/Voai.app" "$stage/previous.app"; fi
+if ! mv "$app" "$distribution/Voai.app"; then
+    if [[ -d "$stage/previous.app" ]]; then mv "$stage/previous.app" "$distribution/Voai.app"; fi
+    exit 1
+fi
+mv "$stage/Voai.zip" "$distribution/Voai.zip"
+printf '%s\n' "$distribution/Voai.app"

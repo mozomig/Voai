@@ -1,0 +1,9 @@
+[package]
+name = "voai-text-helper"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+anyhow = "1"
+llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["metal"] }

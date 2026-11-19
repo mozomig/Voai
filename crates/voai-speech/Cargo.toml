@@ -1,0 +1,17 @@
+[package]
+name = "voai-speech"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[features]
+test-fixtures = []
+
+[dependencies]
+cpal = "0.17.3"
+rtrb = "0.3"
+rubato = "0.16"
+whisper-rs = { version = "0.16", features = ["metal"] }
+bytemuck = "1"
+objc2-core-audio = { version = "0.3.2", default-features = false, features = ["std", "AudioHardware"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString"] }

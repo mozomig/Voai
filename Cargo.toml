@@ -1,0 +1,45 @@
+[package]
+name = "voai"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", default-features = false, features = ["std"] }
+objc2-application-services = { version = "0.3.2", default-features = false, features = ["std", "HIServices", "AXError", "AXUIElement", "AXValue", "libc"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString", "CFNumber", "CFRunLoop"] }
+raw-window-handle = "0.6"
+gpui = "=0.2.2"
+gpui-component = "=0.5.1"
+tray-icon = { version = "0.26.1", default-features = false }
+global-hotkey = "0.10"
+async-channel = "2"
+futures-lite = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+fs2 = "0.4"
+objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["std", "AVMediaFormat", "AVCaptureDevice", "block2"] }
+block2 = "0.6"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSWorkspace", "NSRunningApplication", "NSAppearance", "NSApplication", "NSPanel", "NSWindow", "NSView", "NSResponder", "libc"] }
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGDirectDisplay", "CGError", "CGEvent", "CGEventTypes", "CGEventSource", "CGRemoteOperation", "libc"] }
+voai-models = { path = "crates/voai-models" }
+voai-speech = { path = "crates/voai-speech" }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+voai-speech = { path = "crates/voai-speech", features = ["test-fixtures"] }
+
+[workspace]
+resolver = "3"
+members = ["crates/voai-models", "crates/voai-speech", "crates/voai-text-helper"]
+default-members = ["."]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2024"
+
+[profile.dev]
+debug = 1
+
+[profile.release]
+strip = "debuginfo"

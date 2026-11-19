@@ -1,0 +1,499 @@
+mod connections;
+mod downloads;
+mod hotkeys;
+mod server;
+mod session;
+mod settings;
+mod types;
+
+use crate::macos;
+use connections::Connections;
+use downloads::Downloads;
+use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
+use hotkeys::Shortcuts;
+use session::{Destination, Session, provider};
+use settings::Settings;
+use std::{
+    fs::{self, File, OpenOptions},
+    path::PathBuf,
+    time::{Duration, Instant, SystemTime},
+};
+pub use types::*;
+
+pub struct Backend {
+    _instance: File,
+    dir: PathBuf,
+    settings: Settings,
+    session: Session,
+    downloads: Downloads,
+    connections: Connections,
+    shortcuts: Option<Shortcuts>,
+    init_keys: bool,
+    held: bool,
+    key_events: std::sync::mpsc::Receiver<GlobalHotKeyEvent>,
+    wake: async_channel::Receiver<()>,
+    notify: async_channel::Sender<()>,
+    use_original_pending: bool,
+    test_focus: bool,
+    devices: Vec<String>,
+    device_list: Option<std::sync::mpsc::Receiver<Result<Vec<String>, String>>>,
+    message: String,
+    has_key: bool,
+    server: server::ServerDiscovery,
+    mic: bool,
+    ax: bool,
+    refreshed: Instant,
+    last_tick: SystemTime,
+}
+
+impl Backend {
+    pub fn new() -> Result<Self, String> {
+        let dir = settings::data_dir().map_err(|e| e.to_string())?;
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(dir.join("instance.lock"))
+            .map_err(|e| e.to_string())?;
+        fs2::FileExt::try_lock_exclusive(&lock).map_err(|_| {
+            "Voai уже запущен. Откройте настройки через значок в строке меню.".to_string()
+        })?;
+        let settings =
+            Settings::load(&dir).map_err(|e| format!("Не удалось открыть настройки: {e}"))?;
+        let has_key = if settings.mode == Mode::Cloud {
+            provider(&settings.provider)
+                .and_then(|p| voai_models::has_api_key(p).map_err(|e| e.to_string()))
+                .unwrap_or(false)
+        } else {
+            false
+        };
+        let downloads = Downloads::new(dir.join("Models"));
+
+        let (key_sender, key_events) = std::sync::mpsc::channel();
+        let (notify, wake) = async_channel::bounded(1);
+        let mut connections = Connections::default();
+        connections.refresh(&settings.local_models, notify.clone());
+        let notify_hotkey = notify.clone();
+        GlobalHotKeyEvent::set_event_handler(Some(move |event| {
+            if key_sender.send(event).is_ok() {
+                let _ = notify_hotkey.try_send(());
+            }
+        }));
+        let mut server = server::ServerDiscovery::default();
+        if settings.mode == Mode::Server {
+            server.request(settings.server_url.clone(), &notify);
+        }
+        Ok(Self {
+            _instance: lock,
+            dir,
+            settings,
+            session: Session::default(),
+            downloads,
+            connections,
+            shortcuts: None,
+            init_keys: true,
+            held: false,
+            key_events,
+            wake,
+            notify,
+            use_original_pending: false,
+            test_focus: false,
+            devices: vec![],
+            device_list: None,
+            message: String::new(),
+            has_key,
+            server,
+            mic: false,
+            ax: macos::trusted(),
+            refreshed: Instant::now(),
+            last_tick: SystemTime::now(),
+        })
+    }
+
+    pub fn wake_signal(&self) -> async_channel::Receiver<()> {
+        self.wake.clone()
+    }
+
+    pub fn snapshot(&self) -> Snapshot {
+        let s = &self.settings;
+        let mut models = self.downloads.rows(s);
+        models.extend(self.connections.rows(s));
+        Snapshot {
+            phase: self.session.phase,
+            transcript: self.session.text.clone(),
+            elapsed_secs: self.session.elapsed(),
+            level: self.session.level,
+            message: if self.session.message.is_empty() {
+                self.message.clone()
+            } else {
+                self.session.message.clone()
+            },
+            shortcut: s.shortcut.clone(),
+            microphone: s.microphone.clone(),
+            microphones: self.devices.clone(),
+            language: s.language.clone(),
+            mode: s.mode,
+            processing_prompt: s.processing_prompt.clone(),
+            provider: s.provider.clone(),
+            cloud_model: s.cloud_model.clone(),
+            server_url: s.server_url.clone(),
+            server_model: s.server_model.clone(),
+            server_models: self.server.models.clone(),
+            server_loading: self.server.loading(),
+            server_error: self.server.error.clone(),
+            server_has_key: self.server.has_key,
+            has_key: self.has_key,
+            access_allowed: self.ax,
+            mic_allowed: self.mic,
+            models,
+            connecting_model: self.connections.busy(),
+            test_result: self.session.result.clone(),
+        }
+    }
+
+    pub fn dispatch(&mut self, command: Command) {
+        if let Err(e) = self.handle(command) {
+            self.message = e;
+        }
+        let _ = self.notify.try_send(());
+    }
+
+    fn handle(&mut self, command: Command) -> Result<(), String> {
+        let refresh_server = matches!(
+            command,
+            Command::DiscoverServer(_) | Command::SetMode(Mode::Server)
+        );
+        let mut next = self.settings.clone();
+        match command {
+            Command::CaptureShortcut(start) => {
+                let keys = self
+                    .shortcuts
+                    .as_mut()
+                    .ok_or("Глобальные сочетания недоступны")?;
+                return if start {
+                    if self.session.phase != Phase::Idle {
+                        return Err("Сначала завершите диктовку.".into());
+                    }
+                    self.held = false;
+                    keys.suspend()
+                } else {
+                    keys.set(&self.settings.shortcut)
+                };
+            }
+            Command::SetShortcut(s) => {
+                if self.session.phase != Phase::Idle {
+                    return Err("Сначала завершите диктовку.".into());
+                }
+                self.shortcuts
+                    .as_mut()
+                    .ok_or("Глобальные сочетания недоступны")?
+                    .set(&s)?;
+                next.shortcut = s;
+            }
+            Command::SetMicrophone(device) => next.microphone = device,
+            Command::SetLanguage(lang) => {
+                if !matches!(lang.as_str(), "ru" | "en" | "auto") {
+                    return Err("Язык недоступен".into());
+                }
+                next.language = lang;
+            }
+            Command::SetMode(mode) => next.mode = mode,
+            Command::DiscoverServer(url) => {
+                let url = voai_models::normalize_server_url(&url).map_err(|e| e.to_string())?;
+                if url != next.server_url {
+                    next.server_model.clear();
+                    next.server_url = url;
+                }
+            }
+            Command::SetServerModel(model) => {
+                if !self.server.models.contains(&model) {
+                    return Err("Обновите список моделей сервера.".into());
+                }
+                next.server_model = model;
+            }
+            Command::SaveServerKey(key) => {
+                voai_models::set_server_key(&self.settings.server_url, &key)
+                    .map_err(|e| e.to_string())?;
+                self.server
+                    .request(self.settings.server_url.clone(), &self.notify);
+                self.message.clear();
+                return Ok(());
+            }
+            Command::SetProcessingPrompt(prompt) => next.set_processing_prompt(prompt)?,
+            Command::ResetProcessingPrompt => next.reset_processing_prompt(),
+            Command::SetProvider(name) => {
+                let p = provider(&name)?;
+                next.cloud_model = p
+                    .models()
+                    .first()
+                    .ok_or("Нет облачных моделей")?
+                    .to_string();
+                next.provider = name;
+            }
+            Command::SetCloudModel(name) => {
+                if !provider(&next.provider)?.models().contains(&name.as_str()) {
+                    return Err("Неизвестная облачная модель".into());
+                }
+                next.cloud_model = name;
+            }
+            Command::SaveKey(key) => {
+                let p = provider(&next.provider)?;
+                voai_models::set_api_key(p, key.trim()).map_err(|e| e.to_string())?;
+                self.has_key = !key.trim().is_empty();
+                self.message = if self.has_key {
+                    "Ключ сохранён в связке ключей."
+                } else {
+                    "Ключ удалён."
+                }
+                .into();
+                return Ok(());
+            }
+            Command::SelectModel(id) => next.select_model(&self.downloads.store, id)?,
+            Command::ConnectModel { path, text_model } => {
+                let kind = if text_model {
+                    voai_models::ModelKind::Text
+                } else {
+                    voai_models::ModelKind::Speech
+                };
+                return self.connections.start(path, kind, self.notify.clone());
+            }
+            Command::DisconnectModel(id) => {
+                next.disconnect(&id)?;
+                next.save(&self.dir).map_err(|e| e.to_string())?;
+                self.settings = next;
+                self.connections.forget(&id);
+                self.message = "Файл отключён".into();
+                return Ok(());
+            }
+            Command::Download(id) => {
+                self.downloads
+                    .start(voai_models::find(&id).ok_or("Модель недоступна")?);
+                return Ok(());
+            }
+            Command::CancelDownload(id) => {
+                self.downloads.cancel(&id);
+                return Ok(());
+            }
+            Command::RequestAccess => return macos::request_access(),
+            Command::RequestMicrophone => {
+                return macos::request_microphone();
+            }
+            Command::TestResultHandled(id) => {
+                if self
+                    .session
+                    .result
+                    .as_ref()
+                    .is_some_and(|(last, _)| *last == id)
+                {
+                    self.session.result = None;
+                }
+                return Ok(());
+            }
+            Command::TestFocus(focus) => {
+                self.test_focus = focus;
+                return Ok(());
+            }
+            Command::Cancel => {
+                self.session.reset();
+                self.message.clear();
+                return Ok(());
+            }
+            Command::UseOriginal => {
+                self.use_original_pending = self.session.phase == Phase::RecoverText;
+                return Ok(());
+            }
+            Command::DismissMessage => {
+                self.message.clear();
+                if self.session.phase == Phase::Error {
+                    self.session.reset();
+                }
+                return Ok(());
+            }
+            Command::RefreshDevices => {
+                self.refresh_devices();
+                return Ok(());
+            }
+        }
+        if let Err(e) = next.save(&self.dir) {
+            if next.shortcut != self.settings.shortcut
+                && let Some(keys) = &mut self.shortcuts
+            {
+                let _ = keys.set(&self.settings.shortcut);
+            }
+            return Err(e.to_string());
+        }
+        let refresh_key = next.mode == Mode::Cloud
+            && (next.mode != self.settings.mode || next.provider != self.settings.provider);
+        self.settings = next;
+        if refresh_server {
+            self.server
+                .request(self.settings.server_url.clone(), &self.notify);
+        }
+        self.message.clear();
+        if refresh_key {
+            self.has_key = voai_models::has_api_key(provider(&self.settings.provider)?)
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn refresh_devices(&mut self) {
+        if !self.mic || self.device_list.is_some() {
+            return;
+        }
+        let (send, receive) = std::sync::mpsc::channel();
+        let notify = self.notify.clone();
+        self.device_list = Some(receive);
+        std::thread::spawn(move || {
+            let _ = send.send(voai_speech::input_devices());
+            let _ = notify.try_send(());
+        });
+    }
+
+    fn pressed(&mut self) -> Result<(), String> {
+        let recovering = self.session.phase == Phase::RecoverFocus;
+        if !matches!(
+            self.session.phase,
+            Phase::Idle | Phase::RecoverFocus | Phase::Error
+        ) {
+            return Ok(());
+        }
+        self.message.clear();
+        let own_window = macos::app_frontmost();
+        let target = if own_window && self.test_focus {
+            Destination::Test
+        } else if own_window {
+            return Err("Установите курсор в пробное поле или откройте редактор.".into());
+        } else {
+            Destination::Field(macos::Destination::capture()?)
+        };
+        if recovering {
+            self.session.retarget(target, own_window && self.test_focus);
+            return Ok(());
+        }
+        if !macos::microphone_allowed() {
+            return Err("Разрешите доступ к микрофону в разделе «Диктовка».".into());
+        }
+        let path = self
+            .settings
+            .selected_path(&self.downloads.store, voai_models::ModelKind::Speech)?;
+        self.session.start(&self.settings, target, path)
+    }
+
+    pub fn tick(&mut self) {
+        if self.init_keys {
+            self.init_keys = false;
+            match Shortcuts::new() {
+                Ok(mut keys) => {
+                    if let Err(e) = keys.set(&self.settings.shortcut) {
+                        self.message = e;
+                    }
+                    self.shortcuts = Some(keys);
+                }
+                Err(e) => self.message = e,
+            }
+        }
+        let now = SystemTime::now();
+        if now.duration_since(self.last_tick).unwrap_or_default() > Duration::from_secs(5)
+            && self.session.phase == Phase::Listening
+        {
+            self.session
+                .fail("Запись прервана после паузы системы.".into());
+            self.held = false;
+        }
+        self.last_tick = now;
+        while let Ok(event) = self.key_events.try_recv() {
+            let Some(keys) = &self.shortcuts else {
+                continue;
+            };
+            if keys.is_cancel(event.id) && event.state == HotKeyState::Pressed {
+                self.session.reset();
+                continue;
+            }
+            if !keys.dictation.is_some_and(|key| key.id() == event.id) {
+                continue;
+            }
+            match event.state {
+                HotKeyState::Pressed if !self.held => {
+                    self.held = true;
+                    if let Err(e) = self.pressed() {
+                        if self.session.phase == Phase::RecoverFocus {
+                            self.session.message = e;
+                        } else {
+                            self.session.fail(e);
+                        }
+                    }
+                }
+                HotKeyState::Released => {
+                    self.held = false;
+                    self.session.finish();
+                }
+                _ => {}
+            }
+        }
+        let trial = self.test_focus && macos::app_frontmost();
+        if std::mem::take(&mut self.use_original_pending) {
+            self.session.use_original(trial);
+        }
+        self.session.tick(&self.downloads.store, trial);
+        if let Some(keys) = &mut self.shortcuts {
+            keys.listen_for_cancel(self.session.phase != Phase::Idle);
+        }
+        self.downloads.tick();
+        self.connections.poll_health(&self.settings.local_models);
+        if let Some(result) = self.connections.result() {
+            match result {
+                Ok(model) => {
+                    // Merge with current settings: they may have changed during validation.
+                    let mut next = self.settings.clone();
+                    next.connect(model.clone());
+                    match next.save(&self.dir) {
+                        Ok(()) => {
+                            self.connections.mark_available(&model);
+                            self.settings = next;
+                            self.message =
+                                "Файл подключён. Выберите модель для использования.".into();
+                        }
+                        Err(e) => self.message = format!("Не удалось сохранить подключение: {e}"),
+                    }
+                }
+                Err(error) => self.message = error,
+            }
+        }
+        self.server.poll(&self.notify);
+        if let Some(rx) = &self.device_list
+            && let Ok(devices) = rx.try_recv()
+        {
+            self.device_list = None;
+            match devices {
+                Ok(list) => self.devices = list,
+                Err(reason) => self.message = reason,
+            }
+        }
+        if self.refreshed.elapsed() >= Duration::from_secs(1) {
+            self.downloads.reconcile();
+            self.connections
+                .refresh(&self.settings.local_models, self.notify.clone());
+            self.ax = macos::trusted();
+            let allowed = macos::microphone_allowed();
+            if allowed != self.mic {
+                self.mic = allowed;
+                if allowed {
+                    self.refresh_devices();
+                } else {
+                    self.devices.clear();
+                    self.device_list = None;
+                }
+            }
+            self.refreshed = Instant::now();
+        }
+    }
+}
+
+impl Drop for Backend {
+    fn drop(&mut self) {
+        self.session.reset();
+    }
+}
