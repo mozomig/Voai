@@ -21,6 +21,8 @@ pub(super) struct PendingReply {
 #[derive(Serialize, Deserialize)]
 pub(super) struct State {
     account: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_port: Option<std::num::NonZeroU16>,
     pub bot: Option<i64>,
     pub owner: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -34,6 +36,7 @@ impl State {
         Self {
             account: Uuid::new_v4().to_string(),
             bot: None,
+            proxy_port: None,
             owner: None,
             pending: None,
             next_update: 0,

@@ -1,6 +1,7 @@
 //! One background worker owns Telegram state, credentials and delivery. Workers
 //! are serialized across reconnects and each has a private UI event channel.
 mod api;
+mod http;
 mod state;
 #[cfg(test)]
 mod tests;
@@ -11,9 +12,10 @@ use api::Api;
 use state::State;
 use std::{
     fs,
+    num::NonZeroU16,
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
@@ -30,9 +32,12 @@ pub struct TelegramView {
     pub owner: Option<i64>,
     pub awaiting_confirmation: bool,
     pub status: String,
+    pub proxy_port: Option<NonZeroU16>,
+    pub route_ready: bool,
 }
 
 pub enum TelegramCommand {
+    SetRoute(Option<NonZeroU16>),
     Connect(String),
     Retry,
     ResendPart,
@@ -41,6 +46,7 @@ pub enum TelegramCommand {
 }
 
 enum Event {
+    Route(Option<NonZeroU16>),
     Identity {
         username: String,
         owner: Option<i64>,
@@ -105,12 +111,13 @@ pub(super) struct Telegram {
     events: Option<mpsc::Receiver<Event>>,
     cancel: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
-    http: Option<ureq::Agent>,
+    http: Arc<OnceLock<http::Client>>,
 }
 
 enum Operation {
     Restore,
-    Connect(Zeroizing<String>),
+    Connect(Zeroizing<String>, Option<NonZeroU16>),
+    SetRoute(Option<NonZeroU16>),
     Disconnect,
 }
 
@@ -126,7 +133,7 @@ impl Telegram {
             events: None,
             cancel: Arc::default(),
             worker: None,
-            http: None,
+            http: Arc::default(),
         };
         match this.path.try_exists() {
             Ok(true) => this.start(Operation::Restore),
@@ -141,8 +148,14 @@ impl Telegram {
             return;
         }
         match cmd {
-            TelegramCommand::Connect(token) if !self.view.enabled => {
-                self.start(Operation::Connect(Zeroizing::new(token)))
+            TelegramCommand::Connect(token) if !self.view.enabled => self.start(
+                Operation::Connect(Zeroizing::new(token), self.view.proxy_port),
+            ),
+            TelegramCommand::SetRoute(route) if !self.view.enabled => self.view.proxy_port = route,
+            TelegramCommand::SetRoute(route)
+                if self.view.route_ready && route != self.view.proxy_port =>
+            {
+                self.start(Operation::SetRoute(route))
             }
             TelegramCommand::Disconnect if self.view.enabled => self.start(Operation::Disconnect),
             TelegramCommand::Retry if self.view.enabled && !self.view.running => {
@@ -186,8 +199,8 @@ impl Telegram {
             ..Default::default()
         };
         let path = self.path.clone();
-        let http = Api::agent();
-        self.http = Some(http.clone());
+        self.http = Arc::default();
+        let http = self.http.clone();
         self.worker = Some(thread::spawn(move || {
             if let Some(previous) = previous {
                 let _ = previous.join();
@@ -207,7 +220,7 @@ impl Telegram {
 
     fn stop(&mut self) {
         self.cancel.store(true, Ordering::Release);
-        if let Some(http) = self.http.take() {
+        if let Some(http) = self.http.get() {
             http.shutdown();
         }
         if let Some(worker) = &self.worker {
@@ -233,6 +246,10 @@ impl Telegram {
                 Event::Paired(owner) => {
                     self.view.owner = Some(owner);
                     self.view.pairing_url = None;
+                }
+                Event::Route(port) => {
+                    self.view.proxy_port = port;
+                    self.view.route_ready = true;
                 }
                 Event::Status(text) => self.view.status = text,
                 Event::Pipeline(tx) => {
@@ -263,26 +280,42 @@ impl Telegram {
     }
 }
 
-fn run_bot(op: Operation, path: &Path, signals: &Signals, http: ureq::Agent) -> Result<(), String> {
-    let (state, api) = match op {
-        Operation::Connect(token) => {
-            let token = token.trim();
-            let api = Api::new(token, http)?;
-            let state = State::new();
-            state.set_token(token)?;
+fn run_bot(
+    op: Operation,
+    path: &Path,
+    signals: &Signals,
+    handle: Arc<OnceLock<http::Client>>,
+) -> Result<(), String> {
+    let (state, secret) = match op {
+        Operation::Connect(token, port) => {
+            Api::validate_token(&token)?;
+            let mut state = State::new();
+            state.proxy_port = port;
+            state.set_token(token.trim())?;
             if let Err(e) = state.save(path) {
                 state.forget()?;
                 return Err(e);
             }
-            (state, api)
+            signals.event(Event::Route(state.proxy_port))?;
+            (state, token)
         }
-        Operation::Restore => {
-            let state = State::load(path)?.ok_or("Подключите бота заново.")?;
-            let api = Api::new(&state.token()?, http)?;
-            (state, api)
+        Operation::Restore | Operation::SetRoute(_) => {
+            let mut state = State::load(path)?.ok_or("Подключите бота заново.")?;
+            if let Operation::SetRoute(port) = op {
+                state.proxy_port = port;
+                state.save(path)?;
+            }
+            signals.event(Event::Route(state.proxy_port))?;
+            let token = state.token()?;
+            (state, token)
         }
         Operation::Disconnect => unreachable!(),
     };
+    let http = handle.get_or_init(|| http::Client::new(state.proxy_port));
+    if !signals.active() {
+        return Ok(());
+    }
+    let api = Api::new(&secret, http.clone())?;
     worker::serve(signals, &api, state, path, |source| {
         let pipeline = signals.request(Event::Pipeline)?;
         pipeline.transcribe(source, signals.cancelled.clone())

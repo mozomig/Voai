@@ -27,9 +27,8 @@ hound = "3.5"
 objc2-avf-audio = { version = "0.3.2", default-features = false, features = ["std", "AVAudioPlayer"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData"] }
 fs2 = "0.4"
-# ureq wire diagnostics can expose Telegram tokenized paths and private messages.
+# Keep HTTP wire traces from exposing private request bodies in application logs.
 log = { version = "0.4", features = ["max_level_info"] }
-ureq = { version = "3.5", features = ["json"] }
 objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["std", "AVMediaFormat", "AVCaptureDevice", "block2"] }
 block2 = "0.6"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSEvent", "block2", "NSWorkspace", "NSRunningApplication", "NSAppearance", "NSApplication", "NSSavePanel", "NSScreen", "NSPanel", "NSWindow", "NSView", "NSResponder", "libc"] }
@@ -40,13 +39,16 @@ voai-speech = { path = "crates/voai-speech" }
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 voai-speech = { path = "crates/voai-speech", features = ["test-fixtures"] }
 
+[build-dependencies]
+cc = "1"
+
 [workspace]
 resolver = "3"
 members = ["crates/voai-diarize", "crates/voai-models", "crates/voai-speech", "crates/voai-text-helper"]
 default-members = ["."]
 
 [workspace.package]
-version = "1.4.2"
+version = "1.4.3"
 edition = "2024"
 
 [profile.dev]

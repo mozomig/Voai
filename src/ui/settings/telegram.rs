@@ -37,6 +37,89 @@ impl Settings {
         cx.notify();
     }
 
+    pub(super) fn apply_telegram_proxy(&mut self, cx: &mut Context<Self>) {
+        if let Ok(port) = self
+            .telegram_port
+            .read(cx)
+            .value()
+            .trim()
+            .parse::<std::num::NonZeroU16>()
+        {
+            self.send(Command::Telegram(TelegramCommand::SetRoute(Some(port))));
+            self.telegram_network_open = false;
+            cx.notify();
+        }
+    }
+
+    fn telegram_network(&self, p: Palette, cx: &Context<Self>) -> Div {
+        let bot = &self.snapshot.telegram;
+        let label = bot.proxy_port.map_or_else(
+            || "Системные настройки macOS".to_owned(),
+            |port| format!("SOCKS5 · 127.0.0.1:{port}"),
+        );
+        let mut section = col().child(Self::setting(
+            p,
+            "Подключение",
+            &label,
+            button("telegram-network", "Изменить", p)
+                .disabled(bot.enabled && !bot.route_ready)
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.telegram_network_open = !this.telegram_network_open;
+                    let port = this.snapshot.telegram.proxy_port.map_or(10808, |p| p.get());
+                    this.telegram_port.update(cx, |input, cx| {
+                        input.set_value(port.to_string(), window, cx)
+                    });
+                    cx.notify();
+                })),
+        ));
+        if self.telegram_network_open {
+            let valid = self
+                .telegram_port
+                .read(cx)
+                .value()
+                .trim()
+                .parse::<std::num::NonZeroU16>()
+                .is_ok();
+            section = section.child(
+                col()
+                    .gap_2()
+                    .child(text(
+                        "Порт локального SOCKS5-прокси на 127.0.0.1",
+                        12.,
+                        p.muted,
+                    ))
+                    .child(
+                        row()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .w(px(78.))
+                                    .child(Input::new(&self.telegram_port).small()),
+                            )
+                            .child(
+                                primary_button("telegram-use-proxy", "Через прокси", p)
+                                    .disabled(!valid)
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.apply_telegram_proxy(cx)),
+                                    ),
+                            )
+                            .child(
+                                button("telegram-system-network", "Системная сеть", p).on_click(
+                                    cx.listener(|this, _, _, cx| {
+                                        this.send(Command::Telegram(TelegramCommand::SetRoute(
+                                            None,
+                                        )));
+                                        this.telegram_network_open = false;
+                                        cx.notify();
+                                    }),
+                                ),
+                            ),
+                    ),
+            );
+        }
+        section
+    }
+
     pub(super) fn telegram(&self, p: Palette, cx: &Context<Self>) -> Div {
         col()
             .gap_2()
@@ -45,6 +128,7 @@ impl Settings {
                 13.,
                 p.muted,
             ))
+            .child(self.telegram_network(p,cx))
             .child(if self.snapshot.telegram.enabled {
                 self.telegram_connection(p, cx)
             } else {

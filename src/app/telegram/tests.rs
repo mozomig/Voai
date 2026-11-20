@@ -27,7 +27,7 @@ fn message(update: i64, chat: i64, fields: Value) -> Value {
     json!({"update_id": update, "message": msg})
 }
 
-fn request(socket: &std::net::TcpStream) -> (String, Value) {
+pub(super) fn request(socket: &std::net::TcpStream) -> (String, Value) {
     socket
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();

@@ -80,6 +80,8 @@ pub(super) struct Settings {
     test: Entity<InputState>,
     key: Entity<InputState>,
     telegram_token: Entity<InputState>,
+    telegram_port: Entity<InputState>,
+    telegram_network_open: bool,
     prompt: Entity<InputState>,
     prompt_needs_layout: bool,
     server_url: Entity<InputState>,
@@ -103,6 +105,17 @@ impl Settings {
         });
         let key = cx.new(|cx| InputState::new(window, cx).masked(true));
         let telegram_token = Self::new_telegram_token(window, cx);
+        let telegram_port = cx.new(|cx| InputState::new(window, cx).placeholder("Порт"));
+        cx.subscribe_in(
+            &telegram_port,
+            window,
+            |this, _, event, _, cx| match event {
+                InputEvent::PressEnter { .. } => this.apply_telegram_proxy(cx),
+                InputEvent::Change => cx.notify(),
+                _ => {}
+            },
+        )
+        .detach();
         cx.subscribe_in(&test, window, |this, _, event, _, _| match event {
             InputEvent::Change => this.edit_revision = this.edit_revision.wrapping_add(1),
             InputEvent::Blur => this.set_test_ready(false),
@@ -170,6 +183,8 @@ impl Settings {
             test,
             key,
             telegram_token,
+            telegram_port,
+            telegram_network_open: false,
             prompt,
             prompt_needs_layout: true,
             server_url,
