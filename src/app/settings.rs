@@ -8,6 +8,12 @@ use std::{
 use tempfile::NamedTempFile;
 use voai_models::{ConnectedModel, ModelKind, ModelStore};
 
+const LEGACY_PROCESSING_PROMPT: &str = "Отредактируй фразу как корректор. Убери слова-паразиты и случайные повторы. Начни предложение с заглавной буквы, заверши подходящим знаком. Сохрани исходный язык, слова, обращение на ты или вы и смысл. Верни только исправленную фразу.";
+
+fn is_default_prompt(prompt: &str) -> bool {
+    prompt == voai_models::DEFAULT_PROCESSING_PROMPT
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub(super) struct Settings {
@@ -19,6 +25,7 @@ pub(super) struct Settings {
     pub text: String,
     pub local_models: Vec<ConnectedModel>,
     pub mode: Mode,
+    #[serde(skip_serializing_if = "is_default_prompt")]
     pub processing_prompt: String,
     pub provider: String,
     pub cloud_model: String,
@@ -29,7 +36,7 @@ pub(super) struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            version: 1,
+            version: 2,
             shortcut: "Alt+Space".into(),
             microphone: None,
             language: "ru".into(),
@@ -150,9 +157,16 @@ impl Settings {
     pub fn load(dir: &Path) -> io::Result<Self> {
         match fs::read(dir.join("settings.json")) {
             Ok(bytes) => {
-                let settings: Self = serde_json::from_slice(&bytes)?;
-                if settings.version != 1 {
-                    return Err(io::Error::other("Неподдерживаемая версия настроек"));
+                let mut settings: Self = serde_json::from_slice(&bytes)?;
+                match settings.version {
+                    1 => {
+                        if settings.processing_prompt == LEGACY_PROCESSING_PROMPT {
+                            settings.reset_processing_prompt();
+                        }
+                        settings.version = 2;
+                    }
+                    2 => {}
+                    _ => return Err(io::Error::other("Неподдерживаемая версия настроек")),
                 }
                 Ok(settings)
             }
@@ -187,6 +201,19 @@ mod tests {
             settings.processing_prompt,
             voai_models::DEFAULT_PROCESSING_PROMPT
         );
+        fs::write(
+            dir.path().join("settings.json"),
+            serde_json::to_vec(
+                &serde_json::json!({ "version": 1, "processing_prompt": LEGACY_PROCESSING_PROMPT }),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        settings = Settings::load(dir.path()).unwrap();
+        assert_eq!(
+            settings.processing_prompt,
+            voai_models::DEFAULT_PROCESSING_PROMPT
+        );
         let original_session = settings.clone();
         let prompt = "Исправь пунктуацию.\nСохрани имена.";
         settings.set_processing_prompt(prompt.into()).unwrap();
@@ -208,6 +235,9 @@ mod tests {
         );
         settings.reset_processing_prompt();
         settings.save(dir.path()).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(dir.path().join("settings.json")).unwrap()).unwrap();
+        assert!(saved.get("processing_prompt").is_none());
         assert_eq!(
             Settings::load(dir.path()).unwrap().processing_prompt,
             voai_models::DEFAULT_PROCESSING_PROMPT
