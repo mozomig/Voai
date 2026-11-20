@@ -99,6 +99,7 @@ pub(super) fn serve(
             let was_unpaired = state.owner.is_none();
             let reply = match update.message {
                 Some(message) if state.owner == Some(message.chat) => {
+                    signals.event(Event::Processing(true))?;
                     let text = response(signals, api, &message, &transcribe)?;
                     Some((message.id, text))
                 }
@@ -125,6 +126,7 @@ pub(super) fn serve(
                     signals.event(Event::Paired(owner))?;
                 }
                 deliver_pending(signals, api, &mut state, state_path)?;
+                signals.event(Event::Processing(false))?;
             }
         }
     }

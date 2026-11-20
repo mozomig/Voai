@@ -4,10 +4,26 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 archive="${1:-target/dist/release/Voai.zip}"
 stage="$(mktemp -d)"
-trap 'rm -rf "$stage"' EXIT
-ditto -x -k "$archive" "$stage"
-app="$stage/Voai.app"
+mounted=false
+cleanup() {
+    if [[ "$mounted" == true ]]; then hdiutil detach -quiet "$stage/mount" || return 1; fi
+    rm -rf "$stage"
+}
+trap cleanup EXIT
+case "$archive" in
+    *.dmg)
+        mkdir "$stage/mount"
+        hdiutil attach -quiet -nobrowse -readonly -mountpoint "$stage/mount" "$archive"
+        mounted=true
+        [[ "$(readlink "$stage/mount/Applications")" == /Applications ]]
+        app="$stage/mount/Voai.app";;
+    *.zip)
+        ditto -x -k "$archive" "$stage"
+        app="$stage/Voai.app";;
+    *) echo "Expected a Voai ZIP or DMG." >&2; exit 2;;
+esac
 codesign --verify --strict --deep "$app"
+codesign --verify --strict --deep "$app/Contents/Frameworks/Sparkle.framework"
 plutil -lint "$app/Contents/Info.plist"
 version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")"
 for name in voai voai-text-helper voai-media-helper voai-diarize; do

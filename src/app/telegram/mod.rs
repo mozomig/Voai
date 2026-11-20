@@ -27,6 +27,7 @@ use zeroize::Zeroizing;
 pub struct TelegramView {
     pub enabled: bool,
     pub running: bool,
+    pub processing: bool,
     pub username: Option<String>,
     pub pairing_url: Option<String>,
     pub owner: Option<i64>,
@@ -46,6 +47,7 @@ pub enum TelegramCommand {
 }
 
 enum Event {
+    Processing(bool),
     Route(Option<NonZeroU16>),
     Identity {
         username: String,
@@ -251,6 +253,7 @@ impl Telegram {
                     self.view.proxy_port = port;
                     self.view.route_ready = true;
                 }
+                Event::Processing(active) => self.view.processing = active,
                 Event::Status(text) => self.view.status = text,
                 Event::Pipeline(tx) => {
                     let _ = tx.send(pipeline());
@@ -271,6 +274,7 @@ impl Telegram {
                     if !configured {
                         self.view = TelegramView::default();
                     }
+                    self.view.processing = false;
                     self.view.running = false;
                     self.view.pairing_url = None;
                     self.view.status = result.err().unwrap_or_default();

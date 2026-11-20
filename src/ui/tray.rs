@@ -8,6 +8,7 @@ use tray_icon::{
 pub(super) enum MenuCommand {
     Settings,
     History,
+    CheckUpdates,
     Quit,
 }
 
@@ -17,6 +18,7 @@ pub(super) struct StatusItem {
     shortcut: MenuItem,
     settings: MenuItem,
     history: MenuItem,
+    check: MenuItem,
     quit: MenuItem,
     last_labels: [String; 2],
 }
@@ -27,6 +29,7 @@ impl StatusItem {
         let shortcut = MenuItem::new("", false, None);
         let settings = MenuItem::new("Настройки…", true, None);
         let history = MenuItem::new("История диктовки", true, None);
+        let check = MenuItem::new("Проверить обновления…", true, None);
         let quit = MenuItem::new("Выйти из Voai", true, None);
         let menu = Menu::with_items(&[
             &status,
@@ -34,8 +37,11 @@ impl StatusItem {
             &PredefinedMenuItem::separator(),
             &history,
             &settings,
-            &quit,
         ])?;
+        if super::updates::available() {
+            menu.append(&check)?;
+        }
+        menu.append(&quit)?;
         // Draw at Retina resolution and let the status bar adapt its template tint.
         let mut rgba = vec![0; 36 * 36 * 4];
         for (x, height) in [(3, 9), (10, 18), (17, 28), (24, 16), (31, 7)] {
@@ -60,6 +66,7 @@ impl StatusItem {
             settings,
             history,
             quit,
+            check,
             last_labels: Default::default(),
         })
     }
@@ -97,6 +104,8 @@ impl StatusItem {
                 Some(MenuCommand::Settings)
             } else if e.id == self.history.id() {
                 Some(MenuCommand::History)
+            } else if e.id == self.check.id() {
+                Some(MenuCommand::CheckUpdates)
             } else if e.id == self.quit.id() {
                 Some(MenuCommand::Quit)
             } else {

@@ -1,0 +1,19 @@
+#!/bin/bash
+# Explicit target first, then the GitHub origin of a normal source checkout.
+set -euo pipefail
+repo="${VOAI_RELEASE_REPOSITORY:-$(git config --local --get voai.releaseRepository 2>/dev/null || true)}"
+if [[ -z "$repo" ]]; then
+    origin=$(git remote get-url origin 2>/dev/null || true)
+    case "$origin" in
+        https://github.com/*) repo=${origin#https://github.com/};;
+        git@github.com:*) repo=${origin#git@github.com:};;
+        ssh://git@github.com/*) repo=${origin#ssh://git@github.com/};;
+        *) exit 0;;
+    esac
+    repo=${repo%/}
+    repo=${repo%.git}
+fi
+if [[ ! "$repo" =~ ^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$ || "${repo#*/}" == "." || "${repo#*/}" == ".." ]]; then
+    echo "Expected a GitHub owner/repository." >&2; exit 2
+fi
+printf '%s\n' "$repo"

@@ -9,7 +9,9 @@ case "$profile" in
     *) echo "Usage: scripts/package-macos [debug|release]" >&2; exit 2;;
 esac
 sherpa_lib_dir="$(./scripts/sherpa-macos)"
-SHERPA_ONNX_LIB_DIR="$sherpa_lib_dir" ./scripts/cargo-macos build --workspace --locked ${flags[@]+"${flags[@]}"}
+sparkle=$(./scripts/sparkle-macos)
+repo=$(./scripts/release-repository)
+VOAI_SPARKLE_SDK="$sparkle" SHERPA_ONNX_LIB_DIR="$sherpa_lib_dir" ./scripts/cargo-macos build --workspace --locked ${flags[@]+"${flags[@]}"}
 build_dir="${CARGO_TARGET_DIR:-$PWD/target/native}/$profile"
 distribution="${VOAI_DIST_DIR:-$PWD/target/dist/$profile}"
 mkdir -p "$distribution"
@@ -18,8 +20,16 @@ trap 'rm -rf "$stage"' EXIT
 app="$stage/Voai.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp packaging/Info.plist "$app/Contents/Info.plist"
+mkdir -p "$app/Contents/Frameworks"
+ditto "$sparkle/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
+if [[ -n "$repo" ]]; then
+    plutil -insert SUFeedURL -string "https://github.com/$repo/releases/latest/download/appcast.xml" "$app/Contents/Info.plist"
+    public_key="${VOAI_SPARKLE_PUBLIC_KEY:-$(cat packaging/sparkle-public-key.txt)}"
+    plutil -insert SUPublicEDKey -string "$public_key" "$app/Contents/Info.plist"
+fi
 cp packaging/Voai.icns "$app/Contents/Resources/Voai.icns"
 cp -R packaging/licenses "$app/Contents/Resources/Licenses"
+cp "$sparkle/LICENSE" "$app/Contents/Resources/Licenses/Sparkle-LICENSE"
 cp crates/voai-speech/assets/fastenhancer/LICENSE "$app/Contents/Resources/Licenses/FastEnhancer-LICENSE"
 xcrun swiftc -O -parse-as-library -target arm64-apple-macosx14.0 \
     native/MediaHelper.swift -o "$stage/voai-media-helper"
@@ -46,6 +56,11 @@ if [[ "$identity" == "-" ]]; then
 fi
 sign=(--force --sign "$identity" --options runtime)
 if [[ "$identity" != "-" ]]; then sign+=(--timestamp); fi
+framework="$app/Contents/Frameworks/Sparkle.framework"
+nested="$framework/Versions/B"
+for component in "$nested"/XPCServices/*.xpc "$nested/Autoupdate" "$nested/Updater.app" "$framework"; do
+    codesign "${sign[@]}" --preserve-metadata=entitlements "$component"
+done
 for helper in voai-text-helper voai-media-helper voai-diarize; do
     codesign "${sign[@]}" "$app/Contents/MacOS/$helper"
 done
@@ -61,11 +76,25 @@ if [[ -n "${VOAI_NOTARY_PROFILE:-}" ]]; then
     xcrun stapler staple "$app"
     xcrun stapler validate "$app"
 fi
-ditto -c -k --keepParent "$app" "$stage/Voai.zip"
+ditto -c -k --sequesterRsrc --keepParent "$app" "$stage/Voai.zip"
+mkdir "$stage/disk"
+ditto "$app" "$stage/disk/Voai.app"
+ln -s /Applications "$stage/disk/Applications"
+dmg="Voai-$version-arm64.dmg"
+hdiutil create -quiet -fs HFS+ -volname Voai -format UDZO -srcfolder "$stage/disk" "$stage/$dmg"
+if [[ "$identity" != "-" ]]; then
+    codesign "${sign[@]}" "$stage/$dmg"
+fi
+if [[ -n "${VOAI_NOTARY_PROFILE:-}" ]]; then
+    xcrun notarytool submit "$stage/$dmg" --keychain-profile "$VOAI_NOTARY_PROFILE" --wait
+    xcrun stapler staple "$stage/$dmg"
+    xcrun stapler validate "$stage/$dmg"
+fi
 if [[ -d "$distribution/Voai.app" ]]; then mv "$distribution/Voai.app" "$stage/previous.app"; fi
 if ! mv "$app" "$distribution/Voai.app"; then
     if [[ -d "$stage/previous.app" ]]; then mv "$stage/previous.app" "$distribution/Voai.app"; fi
     exit 1
 fi
 mv "$stage/Voai.zip" "$distribution/Voai.zip"
+mv "$stage/$dmg" "$distribution/$dmg"
 printf '%s\n' "$distribution/Voai.app"

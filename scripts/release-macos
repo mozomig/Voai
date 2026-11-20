@@ -1,0 +1,17 @@
+#!/bin/bash
+# Prepare assets locally; publication is a separate step.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+repo=$(./scripts/release-repository)
+: "${repo:?Set VOAI_RELEASE_REPOSITORY to owner/repository}"
+: "${VOAI_SIGN_IDENTITY:?Set the Developer ID Application signing identity}"
+: "${VOAI_NOTARY_PROFILE:?Set the notarytool keychain profile}"
+version=$(plutil -extract CFBundleShortVersionString raw packaging/Info.plist)
+export VOAI_RELEASE_REPOSITORY="$repo"
+export VOAI_DIST_DIR="${VOAI_DIST_DIR:-$PWD/target/dist/v$version}"
+./scripts/package-macos
+dmg="$VOAI_DIST_DIR/Voai-$version-arm64.dmg"
+./scripts/verify-macos-release "$dmg"
+./scripts/verify-macos-release "$VOAI_DIST_DIR/Voai.zip"
+./scripts/make-appcast
+echo "Ready for GitHub Release v$version: $dmg, $VOAI_DIST_DIR/Voai.zip, $VOAI_DIST_DIR/appcast.xml"

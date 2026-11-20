@@ -1,0 +1,23 @@
+#!/bin/bash
+# Fetch the pinned upstream binary distribution, including its release tools.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+version=2.10.1
+digest=1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27
+cache="${CARGO_TARGET_DIR:-$PWD/target/native}/sparkle"
+mkdir -p "$cache"
+dest="$cache/$digest"
+if [[ ! -d "$dest" ]]; then
+    tmp=$(mktemp -d "$cache/.download.XXXXXXXX")
+    trap 'rm -rf "$tmp"' EXIT
+    curl --fail --location --silent --show-error --retry 2 \
+        "https://github.com/sparkle-project/Sparkle/releases/download/$version/Sparkle-$version.tar.xz" -o "$tmp/archive"
+    (cd "$tmp" && echo "$digest  archive" | shasum -a 256 -c - >&2)
+    mkdir "$tmp/sdk"
+    tar -xJf "$tmp/archive" -C "$tmp/sdk" ./Sparkle.framework ./bin ./LICENSE
+    python3 -c 'import os,sys
+try: os.rename(sys.argv[1],sys.argv[2])
+except OSError:
+    if not os.path.isdir(sys.argv[2]): raise' "$tmp/sdk" "$dest"
+fi
+(cd "$dest" && pwd)

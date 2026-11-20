@@ -1,0 +1,36 @@
+#!/bin/bash
+# Sign the final, stapled DMG. The ZIP is an alternative manual download only.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+dist="${VOAI_DIST_DIR:-$PWD/target/dist/release}"
+app="$dist/Voai.app"
+plist="$app/Contents/Info.plist"
+feed=$(plutil -extract SUFeedURL raw "$plist")
+if [[ ! "$feed" =~ ^https://github\.com/([a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+)/releases/latest/download/appcast\.xml$ ]]; then
+    echo "Package Voai with VOAI_RELEASE_REPOSITORY=owner/repository first." >&2; exit 2
+fi
+repo="${BASH_REMATCH[1]}"
+version=$(plutil -extract CFBundleShortVersionString raw "$plist")
+archive="Voai-$version-arm64.dmg"
+sparkle=$(./scripts/sparkle-macos)
+account="${VOAI_SPARKLE_ACCOUNT:-app.voai.desktop}"
+key=$("$sparkle/bin/generate_keys" --account "$account" -p)
+[[ "$key" == "$(plutil -extract SUPublicEDKey raw "$plist")" ]] || { echo "Signing key differs from the packaged app." >&2; exit 1; }
+work=$(mktemp -d "$dist/.feed.XXXXXXXX")
+trap 'rm -rf "$work"' EXIT
+cp "$dist/$archive" "$work/"
+if [[ -n "${VOAI_RELEASE_NOTES:-}" ]]; then cp "$VOAI_RELEASE_NOTES" "$work/${archive%.dmg}.md"; fi
+"$sparkle/bin/generate_appcast" --account "$account" --maximum-deltas 0 --embed-release-notes \
+    --download-url-prefix "https://github.com/$repo/releases/download/v$version/" "$work"
+/usr/bin/python3 - "$work/appcast.xml" "$repo" "$archive" "$version" "$(plutil -extract CFBundleVersion raw "$plist")" <<'PY'
+import sys, xml.etree.ElementTree as ET
+path, repo, archive, version, build = sys.argv[1:]
+item = ET.parse(path).find('./channel/item')
+ns = '{http://www.andymatuschak.org/xml-namespaces/sparkle}'
+enclosure = item.find('enclosure')
+if (enclosure.get('url') != f'https://github.com/{repo}/releases/download/v{version}/{archive}'
+    or not enclosure.get(ns+'edSignature') or item.findtext(ns+'version') != build):
+    sys.exit('Unexpected release URL, build number or missing DMG signature')
+PY
+mv "$work/appcast.xml" "$dist/appcast.xml"
+printf '%s\n' "$dist/appcast.xml"

@@ -305,5 +305,20 @@ impl Settings {
                     )
                     .child(Input::new(&self.test).h(px(58.)).w_full()),
             )
+            .when(crate::ui::updates::available(), |page| {
+                page.child(group_title("Обновления", p))
+                    .child(Self::setting(
+                        p,
+                        "Проверять автоматически",
+                        concat!("Voai ", env!("CARGO_PKG_VERSION")),
+                        gpui_component::switch::Switch::new("automatic-updates")
+                            .small()
+                            .checked(crate::ui::updates::automatic())
+                            .on_click(cx.listener(|_, enabled: &bool, _, cx| {
+                                crate::ui::updates::set_automatic(*enabled);
+                                cx.notify();
+                            })),
+                    ))
+            })
     }
 }

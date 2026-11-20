@@ -1,6 +1,12 @@
-# Voai 1.4
+# Voai 1.5
 
 Voai — локальная диктовка для macOS 14 и новее на Apple Silicon. Установите курсор в редактор, удерживайте **⌥ Space** и говорите. Панель покажет черновик. Отпустите клавиши, чтобы ввести результат у курсора. **Esc** отменяет диктовку.
+
+## Установка и обновления
+
+Скачайте DMG для Apple Silicon со [страницы релизов Voai](https://github.com/mozomig/Voai/releases), откройте его, перетащите Voai в «Программы» и запустите оттуда. Также доступен ZIP с тем же приложением.
+
+В релизной сборке пункт **Voai → Проверить обновления…** открывает окно Sparkle. Автоматическую проверку можно переключить внизу раздела **Диктовка**. Вы сами выбираете момент установки. Если в Voai идёт диктовка или расшифровка, приложение откладывает перезапуск.
 
 ## Первый запуск
 
@@ -100,5 +106,23 @@ swift tests/macos/input.swift "$PWD/target/dist/release/Voai.app/Contents/MacOS/
 Для локальной разработки выберите свой сертификат Apple Development из вывода `security find-identity -v -p codesigning` и сохраните его отпечаток командой `git config --local voai.signingIdentity ОТПЕЧАТОК`. У следующих сборок сохранится идентичность приложения для разрешений macOS. Без выбранного сертификата сценарий использует ad hoc, и разрешение может устареть при пересборке.
 
 При переходе с ad hoc на сертификат удалите прежнюю запись Voai в **Системные настройки → Конфиденциальность и безопасность → Универсальный доступ** и добавьте актуальную `Voai.app` кнопкой **+**. macOS отдельно управляет доступом к микрофону. Для распространения задайте переменную `VOAI_SIGN_IDENTITY` с именем сертификата Developer ID Application. Передача профиля Keychain в `VOAI_NOTARY_PROFILE` включает отправку в Apple, ожидание нотарификации и прикрепление билета. Архив и пакет появляются рядом в `target/dist/release/`.
+
+## Подготовка публичного релиза
+
+Сборка берёт адрес репозитория из GitHub-remote `origin`. Для отдельного репозитория релизов задайте `VOAI_RELEASE_REPOSITORY=owner/repo`. Без адреса обычная локальная сборка запускается с отключённой проверкой обновлений.
+
+1. Увеличьте версию workspace и обновите `Cargo.lock`. В `packaging/Info.plist` задайте ту же версию и увеличьте `CFBundleVersion`. Sparkle сравнивает номера сборок.
+2. На Mac для выпуска нужен сертификат **Developer ID Application**, профиль `notarytool` и ключ Sparkle в Связке ключей. Официальный публичный ключ находится в `packaging/sparkle-public-key.txt`. Закрытый ключ хранится в аккаунте Sparkle `app.voai.desktop`. Для своего форка создайте отдельный ключ через `"$(./scripts/sparkle-macos)/bin/generate_keys" --account ИМЯ`, задайте `VOAI_SPARKLE_ACCOUNT` и `VOAI_SPARKLE_PUBLIC_KEY`.
+3. Запустите сборку. Для описания изменений можно передать путь к Markdown-файлу в `VOAI_RELEASE_NOTES`.
+
+```sh
+VOAI_SIGN_IDENTITY='Developer ID Application: …' \
+VOAI_NOTARY_PROFILE='voai-notary' \
+./scripts/release-macos
+```
+
+4. Создайте черновик GitHub Release с тегом `v<версия>`. Из `target/dist/v<версия>/` приложите **Voai-<версия>-arm64.dmg**, **Voai.zip** и **appcast.xml**, затем опубликуйте как **Latest**. Sparkle загружает подписанную ленту по постоянному адресу `releases/latest/download/appcast.xml`, а DMG — по ссылке на конкретный тег. При замене DMG соберите подписи и ленту заново.
+
+Для локальной репетиции с сертификатом разработки доступны `./scripts/package-macos`, `./scripts/make-appcast` и `./scripts/verify-macos-release путь/к/образу.dmg`. Скрипты подготовки оставляют файлы на Mac. [Документация Sparkle](https://sparkle-project.org/documentation/publishing/)
 
 [Архитектура](./ARCHITECTURE.md) · [Исходный макет](./design/index.html)

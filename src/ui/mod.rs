@@ -3,6 +3,7 @@ mod panel;
 mod settings;
 mod style;
 mod tray;
+mod updates;
 mod widget_position;
 
 use gpui::{prelude::*, *};
@@ -19,6 +20,7 @@ type Engine = Rc<RefCell<Backend>>;
 actions!(
     voai,
     [
+        CheckUpdates,
         OpenSettings,
         OpenPermissions,
         OpenSpeechModels,
@@ -136,6 +138,7 @@ impl Desktop {
                             });
                         }
                     }
+                    MenuCommand::CheckUpdates => updates::check(),
                     MenuCommand::Quit => {
                         cx.quit();
                         return;
@@ -156,6 +159,16 @@ impl Desktop {
             engine.tick();
             engine.snapshot()
         };
+        updates::set_busy(
+            snapshot.phase != Phase::Idle
+                || snapshot.files.progress.is_some()
+                || snapshot.telegram.processing
+                || snapshot.connecting_model
+                || snapshot
+                    .models
+                    .iter()
+                    .any(|m| matches!(m.state, ModelState::Downloading { .. })),
+        );
         let changed = self.last.as_ref() != Some(&snapshot);
         if changed {
             if let Some(tray) = self.tray.as_mut() {
@@ -259,6 +272,7 @@ pub fn run(backend: Backend) {
     app.on_reopen(move |cx| reopen.borrow_mut().show_settings(cx));
     app.run(move |cx| {
         appearance::use_dark_aqua();
+        updates::start();
         gpui_component::init(cx);
         style::Palette::dark().apply(cx);
         gpui_component::set_locale("ru");
@@ -294,13 +308,18 @@ pub fn run(backend: Backend) {
             KeyBinding::new("cmd-q", Quit, None),
             KeyBinding::new("cmd-w", CloseSettings, None),
         ]);
+        cx.on_action(|_: &CheckUpdates, _| updates::check());
+        let mut items = vec![MenuItem::action("Настройки…", OpenSettings)];
+        if updates::available() {
+            items.push(MenuItem::action("Проверить обновления…", CheckUpdates));
+        }
+        items.extend([
+            MenuItem::separator(),
+            MenuItem::action("Выйти из Voai", Quit),
+        ]);
         cx.set_menus(vec![Menu {
             name: "Voai".into(),
-            items: vec![
-                MenuItem::action("Настройки…", OpenSettings),
-                MenuItem::separator(),
-                MenuItem::action("Выйти из Voai", Quit),
-            ],
+            items,
         }]);
         match StatusItem::new() {
             Ok(tray) => desktop.borrow_mut().tray = Some(tray),
