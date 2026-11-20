@@ -16,6 +16,7 @@ const ORIGIN: &str = "https://api.telegram.org";
 #[derive(Debug)]
 pub(super) enum Error {
     Network,
+    Connection(&'static str),
     InvalidResponse,
     Rejected(u16),
     RateLimited(u64),
@@ -34,7 +35,10 @@ impl Error {
     pub(super) fn retryable_download(&self) -> bool {
         matches!(
             self,
-            Self::Network | Self::RateLimited(_) | Self::Rejected(408 | 429 | 500..=599)
+            Self::Network
+                | Self::Connection(_)
+                | Self::RateLimited(_)
+                | Self::Rejected(408 | 429 | 500..=599)
         )
     }
 
@@ -53,12 +57,14 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match self {
+            Self::Connection(reason) => reason,
             Self::Network => "Нет связи с Telegram.",
             Self::InvalidResponse => "Не удалось прочитать ответ Telegram.",
             Self::Rejected(401 | 404) => "Telegram отклонил запрос. Проверьте токен бота.",
             Self::Rejected(403) => "Telegram запретил доступ.",
             Self::Rejected(409) => "У бота включён webhook или он уже запущен в другом приложении.",
             Self::RateLimited(_) => "Слишком много запросов к Telegram.",
+            Self::Rejected(500..=599) => "Сервис Telegram временно недоступен.",
             Self::Rejected(_) => "Telegram отклонил запрос.",
             Self::TooLarge => {
                 "Бот может скачать файл размером до 20 МБ. Большие файлы откройте в Voai на Mac."
@@ -97,7 +103,20 @@ pub(super) struct Api {
 }
 
 impl Api {
-    pub(super) fn new(token: &str) -> Result<Self, String> {
+    pub(super) fn agent() -> ureq::Agent {
+        ureq::Agent::config_builder()
+            .https_only(true)
+            .proxy(None)
+            .max_redirects(0)
+            .http_status_as_error(false)
+            .timeout_global(Some(Duration::from_secs(15)))
+            .timeout_connect(Some(Duration::from_secs(5)))
+            .timeout_per_read(Some(Duration::from_secs(10)))
+            .build()
+            .new_agent()
+    }
+
+    pub(super) fn new(token: &str, agent: ureq::Agent) -> Result<Self, String> {
         let token = token.trim();
         if !token.split_once(':').is_some_and(|(id, secret)| {
             !id.is_empty()
@@ -110,16 +129,6 @@ impl Api {
         }) {
             return Err("Проверьте токен из BotFather.".into());
         }
-        let agent = ureq::Agent::config_builder()
-            .https_only(true)
-            .proxy(None)
-            .max_redirects(0)
-            .http_status_as_error(false)
-            .timeout_global(Some(Duration::from_secs(15)))
-            .timeout_connect(Some(Duration::from_secs(5)))
-            .timeout_per_read(Some(Duration::from_secs(10)))
-            .build()
-            .new_agent();
         Ok(Self {
             agent,
             origin: ORIGIN.to_owned(),
@@ -147,16 +156,39 @@ impl Api {
     }
 
     fn call<T: serde::de::DeserializeOwned>(&self, method: &str, body: Value) -> Result<T, Error> {
-        let mut response = self
-            .agent
-            .post(format!(
-                "{}/bot{}/{}",
-                self.origin,
-                self.token.as_str(),
-                method
-            ))
-            .send_json(body)
-            .map_err(|_| Error::Network)?;
+        let request = self.agent.post(format!(
+            "{}/bot{}/{}",
+            self.origin,
+            self.token.as_str(),
+            method
+        ));
+        // A new bot can take longer to answer its first identity request than a
+        // normal polling round. Keep later requests on the short default timeout.
+        let request = if method == "getMe" {
+            request
+                .config()
+                .timeout_global(Some(Duration::from_secs(100)))
+                .timeout_per_read(Some(Duration::from_secs(90)))
+                .build()
+        } else {
+            request
+        };
+        let mut response = request.send_json(body).map_err(|error| {
+            if method == "getMe"
+                && matches!(
+                    error,
+                    ureq::Error::Timeout(
+                        ureq::Timeout::PerRead
+                            | ureq::Timeout::RecvResponse
+                            | ureq::Timeout::Global
+                    )
+                )
+            {
+                Error::Connection("Telegram не подтвердил бота за отведённое время.")
+            } else {
+                transport_error(error)
+            }
+        })?;
         let status = response.status();
         let mut body = response
             .body_mut()
@@ -284,7 +316,7 @@ impl Api {
             .build()
             .header("Accept-Encoding", "identity")
             .call()
-            .map_err(|_| Error::Network)?;
+            .map_err(transport_error)?;
         if response.status().as_u16() == 429 {
             let delay = response
                 .headers()
@@ -327,6 +359,40 @@ impl Api {
         temp.persist(path).map_err(|_| Error::Storage)?;
         Ok(())
     }
+}
+
+// Raw HTTP diagnostics can contain a tokenized URL. Only fixed, user-facing
+// descriptions cross this boundary.
+fn transport_error(error: ureq::Error) -> Error {
+    use std::io::ErrorKind;
+    let reason = match error {
+        ureq::Error::HostNotFound | ureq::Error::Timeout(ureq::Timeout::Resolve) => {
+            "Не удалось найти api.telegram.org через DNS."
+        }
+        ureq::Error::Timeout(ureq::Timeout::Connect) => {
+            "Истекло время подключения к api.telegram.org."
+        }
+        ureq::Error::Timeout(_) => "Telegram не ответил вовремя.",
+        ureq::Error::Tls(_) | ureq::Error::Rustls(_) => {
+            "Не удалось установить защищённое соединение с Telegram."
+        }
+        ureq::Error::Io(e) => match e.kind() {
+            ErrorKind::PermissionDenied => "macOS запретила Voai подключение к Telegram.",
+            ErrorKind::NetworkUnreachable | ErrorKind::HostUnreachable => {
+                "Нет сетевого маршрута до Telegram."
+            }
+            ErrorKind::ConnectionRefused => "Соединение с Telegram отклонено.",
+            ErrorKind::ConnectionReset | ErrorKind::UnexpectedEof | ErrorKind::BrokenPipe => {
+                "Соединение с Telegram оборвалось."
+            }
+            ErrorKind::InvalidData => "Получены некорректные данные при подключении к Telegram.",
+            ErrorKind::TimedOut => "Telegram не ответил вовремя.",
+            _ => return Error::Network,
+        },
+        ureq::Error::ConnectionFailed => "Не удалось открыть соединение с api.telegram.org.",
+        _ => return Error::Network,
+    };
+    Error::Connection(reason)
 }
 
 fn check_cancelled(cancelled: &AtomicBool) -> Result<(), Error> {
@@ -472,6 +538,99 @@ mod tests {
     use super::*;
     use std::{io::BufRead, net::TcpListener, thread};
 
+    #[test]
+    fn identity_can_outlast_poll_timeout_and_shutdown_interrupts_the_wait() {
+        use std::{net::TcpStream, sync::mpsc, time::Instant};
+        for cancel in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let mut api = Api::for_test(format!("http://{}", listener.local_addr().unwrap()));
+            api.agent = ureq::Agent::config_builder()
+                .proxy(None)
+                .timeout_per_read(Some(Duration::from_millis(25)))
+                .timeout_global(Some(Duration::from_millis(100)))
+                .build()
+                .new_agent();
+            let handle = api.agent.clone();
+            let (ready, waiting) = mpsc::channel();
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                // Consume headers before signalling that the request is in flight.
+                let mut input = std::io::BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    assert!(input.read_line(&mut line).unwrap() > 0);
+                    if line == "\r\n" {
+                        break;
+                    }
+                }
+                ready.send(()).unwrap();
+                thread::sleep(Duration::from_millis(200));
+                if !cancel {
+                    let body =
+                        r#"{"ok":true,"result":{"id":42,"username":"test_bot","is_bot":true}}"#;
+                    write!(
+                        &mut stream,
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .unwrap();
+                } else {
+                    // Keep the socket open until the client itself shuts it down.
+                    TcpStream::set_read_timeout(&stream, Some(Duration::from_secs(2))).unwrap();
+                    let mut rest = Vec::new();
+                    input.read_to_end(&mut rest).unwrap();
+                }
+            });
+            let client = thread::spawn(move || api.me());
+            waiting.recv_timeout(Duration::from_secs(3)).unwrap();
+            if cancel {
+                let start = Instant::now();
+                handle.shutdown();
+                assert!(client.join().unwrap().is_err());
+                assert!(start.elapsed() < Duration::from_secs(2));
+            } else {
+                assert_eq!(client.join().unwrap().unwrap(), (42, "test_bot".into()));
+            }
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn connection_status_distinguishes_failures_without_echoing_request_details() {
+        let failures = [
+            ureq::Error::HostNotFound,
+            ureq::Error::Timeout(ureq::Timeout::Connect),
+            ureq::Error::Tls("private-diagnostic"),
+            ureq::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "private-diagnostic",
+            )),
+        ];
+        let messages: std::collections::HashSet<_> = failures
+            .into_iter()
+            .map(|e| {
+                let error = transport_error(e);
+                assert!(error.retryable_download());
+                let message = error.to_string();
+                assert!(!message.contains("private-diagnostic"));
+                message
+            })
+            .collect();
+        assert_eq!(messages.len(), 4);
+    }
+
+    #[test]
+    #[ignore = "requires a connection to the public Telegram Bot API"]
+    fn public_api_rejects_synthetic_token() {
+        let api = Api::new("123456:abcdefghijklmnop", Api::agent()).unwrap();
+        let result = api.me();
+        assert!(
+            matches!(result, Err(Error::Rejected(401 | 404))),
+            "{result:?}"
+        );
+    }
+
     fn message() -> Value {
         json!({"message_id": 1, "chat": {"id": 19, "type": "private"}, "from": {"id": 19, "is_bot": false}})
     }
@@ -534,7 +693,7 @@ mod tests {
             "123:abcdefghijklmnop/x",
             "host:abcdefghijklmnop",
         ] {
-            assert!(Api::new(token).is_err());
+            assert!(Api::new(token, Api::agent()).is_err());
         }
         assert!(valid_file_path("voice/file_127.oga"));
         for path in [

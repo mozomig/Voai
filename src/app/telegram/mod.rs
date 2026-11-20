@@ -105,6 +105,7 @@ pub(super) struct Telegram {
     events: Option<mpsc::Receiver<Event>>,
     cancel: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
+    http: Option<ureq::Agent>,
 }
 
 enum Operation {
@@ -125,6 +126,7 @@ impl Telegram {
             events: None,
             cancel: Arc::default(),
             worker: None,
+            http: None,
         };
         match this.path.try_exists() {
             Ok(true) => this.start(Operation::Restore),
@@ -184,6 +186,8 @@ impl Telegram {
             ..Default::default()
         };
         let path = self.path.clone();
+        let http = Api::agent();
+        self.http = Some(http.clone());
         self.worker = Some(thread::spawn(move || {
             if let Some(previous) = previous {
                 let _ = previous.join();
@@ -192,7 +196,7 @@ impl Telegram {
             let result = match op {
                 Operation::Disconnect => forget_connection(&path),
                 _ if !signals.active() => return,
-                _ => run_bot(op, &path, &signals),
+                _ => run_bot(op, &path, &signals, http),
             };
             let _ = signals.event(Event::End {
                 configured: path.try_exists().unwrap_or(true),
@@ -203,6 +207,9 @@ impl Telegram {
 
     fn stop(&mut self) {
         self.cancel.store(true, Ordering::Release);
+        if let Some(http) = self.http.take() {
+            http.shutdown();
+        }
         if let Some(worker) = &self.worker {
             worker.thread().unpark();
         }
@@ -256,11 +263,11 @@ impl Telegram {
     }
 }
 
-fn run_bot(op: Operation, path: &Path, signals: &Signals) -> Result<(), String> {
+fn run_bot(op: Operation, path: &Path, signals: &Signals, http: ureq::Agent) -> Result<(), String> {
     let (state, api) = match op {
         Operation::Connect(token) => {
             let token = token.trim();
-            let api = Api::new(token)?;
+            let api = Api::new(token, http)?;
             let state = State::new();
             state.set_token(token)?;
             if let Err(e) = state.save(path) {
@@ -271,7 +278,7 @@ fn run_bot(op: Operation, path: &Path, signals: &Signals) -> Result<(), String> 
         }
         Operation::Restore => {
             let state = State::load(path)?.ok_or("Подключите бота заново.")?;
-            let api = Api::new(&state.token()?)?;
+            let api = Api::new(&state.token()?, http)?;
             (state, api)
         }
         Operation::Disconnect => unreachable!(),

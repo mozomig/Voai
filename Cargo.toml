@@ -46,7 +46,7 @@ members = ["crates/voai-diarize", "crates/voai-models", "crates/voai-speech", "c
 default-members = ["."]
 
 [workspace.package]
-version = "1.4.1"
+version = "1.4.2"
 edition = "2024"
 
 [profile.dev]
