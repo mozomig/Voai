@@ -72,6 +72,13 @@ pub(super) fn provider(name: &str) -> Result<Provider, String> {
 }
 
 impl Session {
+    pub fn widget_anchor(&self) -> Option<objc2_core_foundation::CGRect> {
+        match self.target.as_ref()? {
+            Destination::Field(field) => field.widget_anchor,
+            Destination::Test => None,
+        }
+    }
+
     pub fn elapsed(&self) -> u64 {
         self.started.map_or(self.elapsed, |t| t.elapsed().as_secs())
     }

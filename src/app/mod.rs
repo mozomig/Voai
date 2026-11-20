@@ -134,6 +134,10 @@ impl Backend {
         self.wake.clone()
     }
 
+    pub fn widget_anchor(&self) -> Option<objc2_core_foundation::CGRect> {
+        self.session.widget_anchor()
+    }
+
     pub fn snapshot(&self) -> Snapshot {
         let s = &self.settings;
         let mut models = self.downloads.rows(s);
@@ -159,6 +163,7 @@ impl Backend {
             shortcut: s.shortcut.clone(),
             microphone: s.microphone.clone(),
             noise_suppression: s.noise_suppression,
+            compact_widget: s.compact_widget,
             microphones: self.devices.clone(),
             language: s.language.clone(),
             mode: s.mode,
@@ -254,6 +259,7 @@ impl Backend {
                     .set(&s)?;
                 next.shortcut = s;
             }
+            Command::SetCompactWidget(enabled) => next.compact_widget = enabled,
             Command::SetNoiseSuppression(enabled) => next.noise_suppression = enabled,
             Command::SetMicrophone(device) => next.microphone = device,
             Command::SetLanguage(lang) => {
@@ -433,7 +439,7 @@ impl Backend {
         } else if own_window {
             return Err("Поставьте курсор в поле для диктовки или в своём редакторе.".into());
         } else {
-            Destination::Field(macos::Destination::capture()?)
+            Destination::Field(macos::Destination::capture(self.settings.compact_widget)?)
         };
         if recovering {
             self.session.retarget(target, own_window && self.test_focus);

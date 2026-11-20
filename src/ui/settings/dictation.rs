@@ -1,6 +1,10 @@
 use super::*;
 
 impl Settings {
+    pub(in crate::ui) fn test_widget_anchor(&self) -> Option<objc2_core_foundation::CGRect> {
+        self.test_field_frame.get().filter(|_| self.test_ready)
+    }
+
     fn speech_model(&self, p: Palette, cx: &Context<Self>) -> Div {
         let models = self.snapshot.models.iter().filter(|m| !m.text_model);
         let selected = models
@@ -157,6 +161,49 @@ impl Settings {
                             })),
                     ),
             )
+            .child(Self::setting(p, "Вид виджета", "", {
+                let compact = s.compact_widget;
+                Button::new("widget-style")
+                    .small()
+                    .rounded(px(6.))
+                    .bg(p.surface)
+                    .border_1()
+                    .border_color(p.rule)
+                    .child(
+                        row()
+                            .gap_2()
+                            .child(text(
+                                if compact {
+                                    "Минималистичный"
+                                } else {
+                                    "Стандартный"
+                                },
+                                12.,
+                                p.ink,
+                            ))
+                            .child(icon("chevron", p.muted, 13.)),
+                    )
+                    .dropdown_menu({
+                        let engine = self.engine.clone();
+                        move |mut menu, _, _| {
+                            for (value, label) in
+                                [(false, "Стандартный"), (true, "Минималистичный")]
+                            {
+                                let engine = engine.clone();
+                                menu = menu.item(
+                                    PopupMenuItem::new(label)
+                                        .checked(value == compact)
+                                        .on_click(move |_, _, _| {
+                                            engine
+                                                .borrow_mut()
+                                                .dispatch(Command::SetCompactWidget(value))
+                                        }),
+                                );
+                            }
+                            menu
+                        }
+                    })
+            }))
             .child(self.speech_model(p, cx))
             .child(Self::setting_row(
                 p,
@@ -224,6 +271,39 @@ impl Settings {
                 self.permission(s.access_allowed, false, p, cx),
             ))
             .child(group_title("Проверка диктовки", p))
-            .child(Input::new(&self.test).h(px(58.)).w_full())
+            .child(
+                div()
+                    .relative()
+                    .w_full()
+                    .child(
+                        canvas(
+                            {
+                                let frame = self.test_field_frame.clone();
+                                move |bounds, window, cx| {
+                                    frame.set(window.display(cx).map(|d| {
+                                        use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+                                        let screen =
+                                            objc2_core_graphics::CGDisplayBounds(d.id().into());
+                                        let pos = window.bounds().origin + bounds.origin;
+                                        CGRect::new(
+                                            CGPoint::new(
+                                                screen.origin.x + f64::from(pos.x),
+                                                screen.origin.y + f64::from(pos.y),
+                                            ),
+                                            CGSize::new(
+                                                f64::from(bounds.size.width),
+                                                f64::from(bounds.size.height),
+                                            ),
+                                        )
+                                    }));
+                                }
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .size_full(),
+                    )
+                    .child(Input::new(&self.test).h(px(58.)).w_full()),
+            )
     }
 }

@@ -6,6 +6,14 @@ use gpui::{prelude::*, *};
 
 const BARS: usize = 23;
 
+pub(super) fn compact(snapshot: &Snapshot) -> bool {
+    snapshot.compact_widget
+        && matches!(
+            snapshot.phase,
+            Phase::Listening | Phase::Finishing | Phase::Editing | Phase::Inserting
+        )
+}
+
 pub(super) fn height(snapshot: &Snapshot) -> Pixels {
     match snapshot.phase {
         Phase::Error if snapshot.message.chars().count() <= 90 => px(146.),
@@ -18,15 +26,17 @@ pub(super) struct Panel {
     engine: Engine,
     snapshot: Snapshot,
     levels: VecDeque<f32>,
+    opened: std::time::Instant,
 }
 
 impl Panel {
     pub(super) fn new(engine: Engine, snapshot: Snapshot, window: &Window) -> Self {
-        configure_panel(window);
+        configure_panel(window, compact(&snapshot));
         Self {
             engine,
             snapshot,
             levels: VecDeque::from(vec![0.; BARS]),
+            opened: std::time::Instant::now(),
         }
     }
 
@@ -37,7 +47,7 @@ impl Panel {
         if snapshot.phase == Phase::Listening {
             self.levels.pop_front();
             self.levels.push_back(snapshot.level.clamp(0., 1.));
-        } else if snapshot == self.snapshot {
+        } else if snapshot == self.snapshot && !compact(&snapshot) {
             return;
         }
         self.snapshot = snapshot;
@@ -46,7 +56,7 @@ impl Panel {
 }
 
 /// Keep keyboard focus in the editor even when clicking a panel action.
-fn configure_panel(window: &Window) {
+fn configure_panel(window: &Window, compact: bool) {
     use objc2_app_kit::{NSPanel, NSView};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     let Ok(handle) = HasWindowHandle::window_handle(window) else {
@@ -61,6 +71,7 @@ fn configure_panel(window: &Window) {
     if let Some(panel) = view.window().and_then(|w| w.downcast::<NSPanel>().ok()) {
         panel.setBecomesKeyOnlyIfNeeded(true);
         panel.setHidesOnDeactivate(false);
+        panel.setIgnoresMouseEvents(compact);
     }
 }
 
@@ -83,6 +94,36 @@ impl Render for Panel {
         let p = Palette::dark();
         let s = &self.snapshot;
         let listening = s.phase == Phase::Listening;
+        if compact(s) {
+            return row()
+                .size_full()
+                .justify_center()
+                .gap(px(2.))
+                .rounded_full()
+                .border_1()
+                .border_color(p.rule)
+                .bg(p.side)
+                .children(
+                    self.levels
+                        .iter()
+                        .skip(BARS - 13)
+                        .enumerate()
+                        .map(|(i, level)| {
+                            let amplitude = if listening {
+                                level.sqrt() * 17.
+                            } else {
+                                (self.opened.elapsed().as_secs_f32() * 5. - i as f32 * 0.6)
+                                    .sin()
+                                    .mul_add(3., 4.)
+                            };
+                            div()
+                                .w(px(3.))
+                                .h(px(3. + amplitude))
+                                .rounded_full()
+                                .bg(if listening { p.accent } else { p.muted })
+                        }),
+                );
+        }
         let recovering = matches!(
             s.phase,
             Phase::RecoverFocus | Phase::RecoverText | Phase::Uncertain | Phase::Error

@@ -255,16 +255,69 @@ pub fn request_microphone() -> Result<(), String> {
     Ok(())
 }
 
+impl Target {
+    /// Read geometry once from the captured field. Editors vary in which AX
+    /// geometry they publish; neither geometry nor its absence affects delivery.
+    fn widget_bounds(&self) -> Option<objc2_core_foundation::CGRect> {
+        use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+        let position = attribute::<AXValue>(&self.field, "AXPosition").ok();
+        let size = attribute::<AXValue>(&self.field, "AXSize").ok();
+        let mut point = CGPoint::default();
+        let mut dimensions = CGSize::default();
+        // AXValue writes only if the requested native type matches its payload.
+        let field = position.zip(size).and_then(|(p, s)| {
+            let valid = unsafe {
+                p.value(AXValueType::CGPoint, NonNull::from(&mut point).cast())
+                    && s.value(AXValueType::CGSize, NonNull::from(&mut dimensions).cast())
+            };
+            (valid && dimensions.width > 0. && dimensions.height > 0.)
+                .then(|| CGRect::new(point, dimensions))
+        });
+        if field.is_some_and(|r| r.size.height <= 160.) {
+            return field;
+        }
+        let caret = || {
+            let range = CFRange {
+                location: self.selection.location,
+                length: 0,
+            };
+            let parameter =
+                unsafe { AXValue::new(AXValueType::CFRange, NonNull::from(&range).cast()) }?;
+            let mut out: *const CFType = ptr::null();
+            let status = unsafe {
+                self.field.copy_parameterized_attribute_value(
+                    &CFString::from_str("AXBoundsForRange"),
+                    &parameter,
+                    (&mut out).into(),
+                )
+            };
+            if status != AXError::Success {
+                return None;
+            }
+            let raw = NonNull::new(out.cast_mut())?;
+            let value = unsafe { CFRetained::<CFType>::from_raw(raw) }
+                .downcast::<AXValue>()
+                .ok()?;
+            let mut rect = CGRect::default();
+            let valid =
+                unsafe { value.value(AXValueType::CGRect, NonNull::from(&mut rect).cast()) };
+            (valid && rect.size.height > 0.).then_some(rect)
+        };
+        caret().or(field)
+    }
+}
+
 pub struct Destination {
     pending: PendingInsertion<Target>,
+    pub widget_anchor: Option<objc2_core_foundation::CGRect>,
 }
 
 impl Destination {
-    pub fn capture() -> Result<Self, String> {
-        Self::capture_for(None)
+    pub fn capture(with_anchor: bool) -> Result<Self, String> {
+        Self::capture_for(None, with_anchor)
     }
 
-    fn capture_for(pid: Option<i32>) -> Result<Self, String> {
+    fn capture_for(pid: Option<i32>, with_anchor: bool) -> Result<Self, String> {
         if !trusted() {
             return Err(permission_hint().into());
         }
@@ -287,8 +340,12 @@ impl Destination {
             unsafe { app.set_attribute_value(&attr, objc2_core_foundation::CFBoolean::new(true)) };
         }
         let target = capture(Some(front))?;
+        let widget_anchor = with_anchor.then(|| target.widget_bounds()).flatten();
         let pending = PendingInsertion::new(target);
-        Ok(Self { pending })
+        Ok(Self {
+            pending,
+            widget_anchor,
+        })
     }
 
     pub fn deliver(self, text: &str) -> Result<Option<Receipt>, InsertionError<String>> {
@@ -443,7 +500,7 @@ pub fn probe(expected_pid: Option<i32>) -> Result<(), String> {
         eprintln!("Выберите тестовое поле. Захват цели через 4 секунды.");
         thread::sleep(Duration::from_secs(4));
     }
-    let destination = Destination::capture_for(expected_pid)?;
+    let destination = Destination::capture_for(expected_pid, false)?;
     eprintln!("Цель зафиксирована.");
     thread::sleep(if expected_pid.is_some() {
         Duration::from_millis(350)

@@ -84,6 +84,7 @@ pub(super) struct Settings {
     selection_anchor: Option<(u64, std::ops::Range<usize>)>,
     edit_revision: u64,
     test_ready: bool,
+    test_field_frame: std::rc::Rc<std::cell::Cell<Option<objc2_core_foundation::CGRect>>>,
     shortcut_error: Option<&'static str>,
 }
 
@@ -171,6 +172,7 @@ impl Settings {
             selection_anchor: None,
             edit_revision: 0,
             test_ready: false,
+            test_field_frame: Default::default(),
         }
     }
 

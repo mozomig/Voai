@@ -3,6 +3,7 @@ mod panel;
 mod settings;
 mod style;
 mod tray;
+mod widget_position;
 
 use gpui::{prelude::*, *};
 use gpui_component::Root;
@@ -172,21 +173,45 @@ impl Desktop {
                 }
             }
         }
+        let compact = panel::compact(&snapshot);
+        // A recovery panel needs a different frame and must accept clicks again.
+        if self
+            .last
+            .as_ref()
+            .is_some_and(|last| panel::compact(last) != compact)
+            && let Some(previous) = self.panel.take()
+        {
+            let _ = previous.update(cx, |_, window, _| window.remove_window());
+        }
         if snapshot.phase == Phase::Idle {
             if let Some(panel) = self.panel.take() {
                 let _ = panel.update(cx, |_, window, _| window.remove_window());
             }
         } else if self.panel.is_none() {
-            if let Some(display) = appearance::pointer_display(cx).or_else(|| cx.primary_display())
-            {
-                let bounds = display.bounds();
-                let dimensions = size(px(430.).min(bounds.size.width), panel::height(&snapshot));
-                let origin = point(
-                    (bounds.size.width - dimensions.width) / 2.,
-                    (bounds.size.height - dimensions.height - px(85.)).max(px(0.)),
-                );
+            let placement = if compact {
+                let anchor = self.engine.borrow().widget_anchor().or_else(|| {
+                    let root = self.settings?.read(cx).ok()?;
+                    let view = root.view().clone().downcast::<Settings>().ok()?;
+                    view.read(cx).test_widget_anchor()
+                });
+                widget_position::compact_bounds(anchor, cx)
+            } else {
+                appearance::pointer_display(cx)
+                    .or_else(|| cx.primary_display())
+                    .map(|display| {
+                        let bounds = display.bounds();
+                        let dimensions =
+                            size(px(430.).min(bounds.size.width), panel::height(&snapshot));
+                        let origin = point(
+                            (bounds.size.width - dimensions.width) / 2.,
+                            (bounds.size.height - dimensions.height - px(85.)).max(px(0.)),
+                        );
+                        (display, Bounds::new(origin, dimensions))
+                    })
+            };
+            if let Some((display, frame)) = placement {
                 let options = WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(origin, dimensions))),
+                    window_bounds: Some(WindowBounds::Windowed(frame)),
                     display_id: Some(display.id()),
                     kind: WindowKind::PopUp,
                     titlebar: None,
@@ -207,7 +232,7 @@ impl Desktop {
                     }
                 }
             }
-        } else if (changed || snapshot.phase == Phase::Listening)
+        } else if (changed || snapshot.phase == Phase::Listening || compact)
             && let Some(panel) = self.panel
             && panel
                 .update(cx, |panel, window, cx| {
