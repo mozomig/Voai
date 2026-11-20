@@ -1,1 +1,48 @@
-/target
+# Rust builds, macOS packages and local QA runs
+/target/
+/dist/
+*.app/
+*.dSYM/
+*.dmg
+/Voai*.zip
+.DS_Store
+__pycache__/
+
+# Local configuration and signing credentials
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.pfx
+*.pem
+*.key
+*.keychain-db
+sparkle_private_key*
+
+# Voai runtime data and personal media
+/Models/
+/History/
+/Transcripts/
+settings.json
+telegram.json
+*.sqlite3
+*.sqlite3-*
+*.wav
+*.m4a
+*.mp3
+*.ogg
+*.opus
+*.flac
+*.aiff
+*.mp4
+*.mov
+*.webm
+*.mkv
+
+# External model weights. The bundled noise suppressor ships with the app.
+*.gguf
+*.bin
+*.safetensors
+*.onnx
+!/crates/voai-speech/assets/fastenhancer/fastenhancer_b.onnx
