@@ -83,7 +83,12 @@ impl Session {
         model: PathBuf,
     ) -> Result<(), String> {
         let language = (settings.language != "auto").then(|| settings.language.clone());
-        let recording = voai_speech::start(model, language, settings.microphone.clone())?;
+        let recording = voai_speech::start(
+            model,
+            language,
+            settings.microphone.clone(),
+            settings.noise_suppression,
+        )?;
         self.begin(settings, target, recording);
         Ok(())
     }

@@ -145,6 +145,7 @@ impl Backend {
             },
             shortcut: s.shortcut.clone(),
             microphone: s.microphone.clone(),
+            noise_suppression: s.noise_suppression,
             microphones: self.devices.clone(),
             language: s.language.clone(),
             mode: s.mode,
@@ -227,6 +228,7 @@ impl Backend {
                     .set(&s)?;
                 next.shortcut = s;
             }
+            Command::SetNoiseSuppression(enabled) => next.noise_suppression = enabled,
             Command::SetMicrophone(device) => next.microphone = device,
             Command::SetLanguage(lang) => {
                 if !matches!(lang.as_str(), "ru" | "en" | "auto") {

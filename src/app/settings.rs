@@ -20,6 +20,7 @@ pub(super) struct Settings {
     version: u32,
     pub shortcut: String,
     pub microphone: Option<String>,
+    pub noise_suppression: bool,
     pub language: String,
     pub speech: String,
     pub text: String,
@@ -39,6 +40,7 @@ impl Default for Settings {
             version: 2,
             shortcut: "Alt+Space".into(),
             microphone: None,
+            noise_suppression: false,
             language: "ru".into(),
             speech: String::new(),
             text: String::new(),
@@ -255,6 +257,7 @@ mod tests {
         .unwrap();
         let mut settings = Settings::load(dir.path()).unwrap();
         assert!(settings.local_models.is_empty());
+        assert!(!settings.noise_suppression);
 
         let path = dir.path().join("моя модель.gguf");
         let mut file = b"GGUF".to_vec();
@@ -306,9 +309,13 @@ mod tests {
     fn round_trip_and_reject_future_settings() {
         let dir = tempfile::tempdir().unwrap();
         let mut settings = Settings::load(dir.path()).unwrap();
+        assert!(!settings.noise_suppression);
+        settings.noise_suppression = true;
         settings.language = "auto".into();
         settings.save(dir.path()).unwrap();
-        assert_eq!(Settings::load(dir.path()).unwrap().language, "auto");
+        let saved = Settings::load(dir.path()).unwrap();
+        assert_eq!(saved.language, "auto");
+        assert!(saved.noise_suppression);
         fs::write(dir.path().join("settings.json"), r#"{"version":99}"#).unwrap();
         assert!(Settings::load(dir.path()).is_err());
     }

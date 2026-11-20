@@ -1,5 +1,6 @@
 //! A recording owns the microphone until release or cancellation. The UI only polls events.
 mod audio;
+mod denoise;
 mod devices;
 mod worker;
 
@@ -96,11 +97,16 @@ pub fn start(
     model: PathBuf,
     language: Option<String>,
     device: Option<String>,
+    noise_suppression: bool,
 ) -> Result<Recording, String> {
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-    start_with_source(model, language, executable, move |state| {
-        audio::Microphone::open(device.as_deref(), state)
-    })
+    start_with_source(
+        model,
+        language,
+        executable,
+        noise_suppression,
+        move |state| audio::Microphone::open(device.as_deref(), state),
+    )
 }
 
 /// Feeds a mono PCM recording through the capture loop for offline acceptance tests.
@@ -111,11 +117,16 @@ pub fn start_fixture(
     executable: PathBuf,
     samples: Vec<f32>,
     rate: usize,
+    noise_suppression: bool,
 ) -> Result<(Recording, std::sync::mpsc::Receiver<()>), String> {
     let (eof, exhausted) = std::sync::mpsc::channel();
-    let recording = start_with_source(model, language, executable, move |state| {
-        audio::Microphone::fixture(samples, rate, state, eof)
-    })?;
+    let recording = start_with_source(
+        model,
+        language,
+        executable,
+        noise_suppression,
+        move |state| audio::Microphone::fixture(samples, rate, state, eof),
+    )?;
     Ok((recording, exhausted))
 }
 
@@ -123,6 +134,7 @@ fn start_with_source(
     model: PathBuf,
     language: Option<String>,
     executable: PathBuf,
+    noise_suppression: bool,
     open: impl FnOnce(Arc<AtomicU8>) -> Result<audio::Microphone, String> + Send + 'static,
 ) -> Result<Recording, String> {
     if !model.is_file() {
@@ -147,7 +159,7 @@ fn start_with_source(
                 state: &capture_state,
                 events: &capture_events,
             };
-            let result = session.run(open);
+            let result = session.run(open, noise_suppression);
             if capture_state.load(Ordering::Acquire) != CANCELLED {
                 let mut events = capture_events.lock().unwrap_or_else(|e| e.into_inner());
                 events.partial = None;
@@ -175,11 +187,13 @@ impl Session<'_> {
     fn run(
         &self,
         open: impl FnOnce(Arc<AtomicU8>) -> Result<audio::Microphone, String>,
+        noise_suppression: bool,
     ) -> Result<FinalTranscript, String> {
         if self.state.load(Ordering::Acquire) != RECORDING {
             return Ok(FinalTranscript::default());
         }
         let mut mic = open(self.state.clone())?;
+        let mut filter = denoise::NoiseSuppression::new(noise_suppression);
         let mut worker = None;
         let mut pcm = Vec::with_capacity(RATE * 5);
         let mut last_input = Instant::now();
@@ -190,6 +204,7 @@ impl Session<'_> {
             if mic.drain(&mut pcm)? {
                 last_input = Instant::now();
             }
+            pcm.truncate(MAX_SAMPLES);
             let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
             if pcm.len() > previous {
                 let samples = &pcm[previous..];
@@ -229,8 +244,9 @@ impl Session<'_> {
             if previous < MIN_SAMPLES && pcm.len() >= MIN_SAMPLES {
                 worker = Some(self.worker()?);
             }
+            let speech = filter.audio(&pcm, false);
             if let Some(active) = &worker {
-                let update = self.update_partial(active, &pcm, &mut last_partial, &mut pending);
+                let update = self.update_partial(active, speech, &mut last_partial, &mut pending);
                 if update.is_err() {
                     // Keep capturing. A fresh helper will receive all PCM on key release.
                     worker.take();
@@ -247,8 +263,9 @@ impl Session<'_> {
         if pcm.len() < MIN_SAMPLES {
             return Ok(FinalTranscript::default());
         }
+        let speech = filter.audio(&pcm, true);
         if let Some(active) = worker
-            && let Ok(text) = self.finish(&active, &pcm, pending.is_some())
+            && let Ok(text) = self.finish(&active, speech, pending.is_some())
         {
             active.keep_warm();
             return Ok(FinalTranscript { text, samples: pcm });
@@ -257,7 +274,7 @@ impl Session<'_> {
             return Ok(FinalTranscript::default());
         }
         let fresh = self.worker()?;
-        let text = self.finish(&fresh, &pcm, false)?;
+        let text = self.finish(&fresh, speech, false)?;
         fresh.keep_warm();
         Ok(FinalTranscript { text, samples: pcm })
     }
@@ -328,6 +345,7 @@ mod tests {
             std::env::current_exe().unwrap(),
             None,
             PathBuf::from("/nonexistent-voai-worker"),
+            false,
             move |state| audio::Microphone::fixture(vec![0.25; RATE / 12], RATE, state, eof),
         )
         .unwrap();

@@ -58,6 +58,7 @@ fn recorded_speech_reaches_test_field() {
     let store = ModelStore::new(temp.path().into());
     let mut settings = Settings::default();
     settings.mode = crate::app::Mode::Local;
+    settings.noise_suppression = true;
     let qwen = ConnectedModel::connect(
         &fixture_path("VOAI_QA_QWEN"),
         ModelKind::Text,
@@ -81,6 +82,7 @@ fn recorded_speech_reaches_test_field() {
             fixture_path("VOAI_QA_WORKER"),
             samples.clone(),
             rate,
+            settings.noise_suppression,
         )
         .unwrap();
         session.begin(&settings, Destination::Test, recording);
@@ -146,6 +148,7 @@ fn stalled_input_preserves_recorded_words() {
         fixture_path("VOAI_QA_WORKER"),
         samples,
         rate,
+        false,
     )
     .unwrap();
     eof.recv_timeout(Duration::from_secs(35)).unwrap();

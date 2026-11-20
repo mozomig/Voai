@@ -18,6 +18,8 @@ app="$stage/Voai.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp packaging/Info.plist "$app/Contents/Info.plist"
 cp packaging/Voai.icns "$app/Contents/Resources/Voai.icns"
+cp -R packaging/licenses "$app/Contents/Resources/Licenses"
+cp crates/voai-speech/assets/fastenhancer/LICENSE "$app/Contents/Resources/Licenses/FastEnhancer-LICENSE"
 for binary in voai voai-text-helper; do
     lipo "$build_dir/$binary" -verify_arch arm64
     install -m 755 "$build_dir/$binary" "$app/Contents/MacOS/$binary"

@@ -188,6 +188,17 @@ impl Settings {
             ))
             .child(Self::setting(
                 p,
+                "Шумоподавление",
+                "Приглушает фоновый шум перед распознаванием.",
+                gpui_component::switch::Switch::new("noise-suppression")
+                    .small()
+                    .checked(s.noise_suppression)
+                    .on_click(cx.listener(|this, enabled: &bool, _, _| {
+                        this.send(Command::SetNoiseSuppression(*enabled));
+                    })),
+            ))
+            .child(Self::setting(
+                p,
                 "Язык речи",
                 "",
                 self.picker(
