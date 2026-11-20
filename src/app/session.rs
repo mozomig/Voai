@@ -1,4 +1,7 @@
-use super::{Phase, Settings};
+use super::{
+    Phase, Settings,
+    history::{NewEntry, Outcome},
+};
 use crate::{insertion::InsertionError, macos};
 use std::{
     path::PathBuf,
@@ -27,6 +30,8 @@ pub(super) struct Session {
     pub started: Option<Instant>,
     elapsed: u64,
     id: u64,
+    started_at: i64,
+    history_draft: Option<NewEntry>,
     target: Option<Destination>,
     recording: Option<Recording>,
     receipt: Option<macos::Receipt>,
@@ -46,6 +51,8 @@ impl Default for Session {
             started: None,
             elapsed: 0,
             id: 0,
+            started_at: 0,
+            history_draft: None,
             target: None,
             recording: None,
             receipt: None,
@@ -88,6 +95,7 @@ impl Session {
         self.settings = settings.clone();
         self.phase = Phase::Listening;
         self.started = Some(Instant::now());
+        self.started_at = chrono::Utc::now().timestamp();
     }
 
     pub fn finish(&mut self) {
@@ -166,12 +174,8 @@ impl Session {
         }
     }
 
-    fn process(&mut self, store: &ModelStore, test_active: bool) {
+    fn process(&mut self, store: &ModelStore) {
         use super::Mode;
-        if self.settings.mode == Mode::Off {
-            self.deliver(test_active);
-            return;
-        }
         let text = self.text.clone();
         let cancel = self.cancelled.clone();
         let settings = self.settings.clone();
@@ -211,7 +215,7 @@ impl Session {
         });
     }
 
-    pub fn tick(&mut self, store: &ModelStore, test_active: bool) {
+    pub fn tick(&mut self, store: &ModelStore, test_active: bool) -> Option<NewEntry> {
         if let Some(receipt) = &self.receipt {
             if let Some(result) = receipt.poll() {
                 self.receipt = None;
@@ -223,7 +227,7 @@ impl Session {
                     }
                 }
             }
-            return;
+            return None;
         }
         while let Some(event) = self.recording.as_ref().and_then(Recording::try_event) {
             match event {
@@ -232,11 +236,22 @@ impl Session {
                 Event::Final(text) => {
                     self.recording.take();
                     self.level = 0.;
-                    if text.trim().is_empty() {
+                    if text.text.trim().is_empty() {
                         self.reset();
                     } else {
-                        self.text = text;
-                        self.process(store, test_active);
+                        let entry = NewEntry {
+                            started: self.started_at,
+                            original: text.text.clone(),
+                            audio: text.samples,
+                            outcome: Outcome::Off,
+                        };
+                        self.text = text.text;
+                        if self.settings.mode == super::Mode::Off {
+                            self.deliver(test_active);
+                            return Some(entry);
+                        }
+                        self.history_draft = Some(entry);
+                        self.process(store);
                     }
                     break;
                 }
@@ -254,23 +269,32 @@ impl Session {
         if let Some(rx) = &self.processor {
             let response = match rx.try_recv() {
                 Ok(result) => result,
-                Err(mpsc::TryRecvError::Empty) => return,
+                Err(mpsc::TryRecvError::Empty) => return None,
                 Err(mpsc::TryRecvError::Disconnected) => Err("Обработка прервалась.".into()),
             };
             self.processor = None;
+            let mut entry = self.history_draft.take();
             match response {
                 Ok(text) if !text.trim().is_empty() => {
+                    if let Some(entry) = &mut entry {
+                        entry.outcome = Outcome::Edited(text.clone());
+                    }
                     self.text = text;
                     self.deliver(test_active);
                 }
                 other => {
+                    if let Some(entry) = &mut entry {
+                        entry.outcome = Outcome::Failed;
+                    }
                     self.phase = Phase::RecoverText;
                     self.message = other
                         .err()
                         .unwrap_or_else(|| "Модель вернула пустой текст.".into());
                 }
             }
+            return entry;
         }
+        None
     }
 }
 
@@ -285,6 +309,12 @@ mod tests {
             text: "исходный текст".into(),
             target: Some(Destination::Test),
             processor: Some(rx),
+            history_draft: Some(NewEntry {
+                started: 10,
+                audio: vec![0.1],
+                original: "исходный текст".into(),
+                outcome: Outcome::Off,
+            }),
             ..Session::default()
         };
         (session, tx, ModelStore::new(PathBuf::new()))
@@ -297,7 +327,7 @@ mod tests {
         session.reset();
         assert!(flag.load(Ordering::Acquire));
         assert!(tx.send(Ok("поздний ответ".into())).is_err());
-        session.tick(&store, true);
+        assert!(session.tick(&store, true).is_none());
         assert!(session.phase == Phase::Idle && session.result.is_none());
     }
 
@@ -305,7 +335,10 @@ mod tests {
     fn processing_failure_preserves_original_for_explicit_insertion() {
         let (mut session, tx, store) = editing();
         tx.send(Err("timeout".into())).unwrap();
-        session.tick(&store, true);
+        let saved = session.tick(&store, true).unwrap();
+        assert_eq!(saved.original, "исходный текст");
+        assert!(saved.outcome == Outcome::Failed);
+        assert!(session.tick(&store, true).is_none());
         assert!(session.phase == Phase::RecoverText && session.result.is_none());
         session.use_original(true);
         assert_eq!(session.result.as_ref().unwrap().1, "исходный текст");
@@ -315,7 +348,10 @@ mod tests {
     fn focus_loss_preserves_edited_text_until_explicit_retarget() {
         let (mut session, tx, store) = editing();
         tx.send(Ok("Итог.".into())).unwrap();
-        session.tick(&store, false);
+        let saved = session.tick(&store, false).unwrap();
+        assert_eq!(saved.original, "исходный текст");
+        assert!(saved.outcome == Outcome::Edited("Итог.".into()));
+        assert!(session.tick(&store, false).is_none());
         assert!(session.phase == Phase::RecoverFocus && session.result.is_none());
         session.retarget(Destination::Test, true);
         assert_eq!(session.result.as_ref().unwrap().1, "Итог.");

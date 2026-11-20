@@ -8,6 +8,7 @@ pub struct Artwork;
 impl AssetSource for Artwork {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         let data: &'static [u8] = match path {
+            "history" => include_bytes!("icons/history.svg"),
             "mic" => include_bytes!("icons/mic.svg"),
             "models" => include_bytes!("icons/models.svg"),
             "sliders" => include_bytes!("icons/sliders.svg"),

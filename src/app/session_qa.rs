@@ -12,13 +12,16 @@ fn tick_until(
     session: &mut Session,
     store: &ModelStore,
     mut reached: impl FnMut(&Session) -> bool,
-) {
+) -> Option<NewEntry> {
+    let mut entry = None;
     let deadline = Instant::now() + Duration::from_secs(120);
     loop {
-        session.tick(store, true);
+        if let Some(saved) = session.tick(store, true) {
+            assert!(entry.replace(saved).is_none());
+        }
         assert!(session.message.is_empty(), "{}", session.message);
         if reached(session) {
-            return;
+            return entry;
         }
         assert!(
             Instant::now() < deadline,
@@ -106,13 +109,16 @@ fn recorded_speech_reaches_test_field() {
     tick_until(&mut session, &store, |s| s.phase == Phase::Editing);
     println!("Final transcript {:?} after release", released.elapsed());
     assert_phrase_boundaries(&session.text);
-    tick_until(&mut session, &store, |s| s.result.is_some());
+    let entry = tick_until(&mut session, &store, |s| s.result.is_some()).unwrap();
+    assert_phrase_boundaries(&entry.original);
+    assert!(!entry.audio.is_empty());
     assert!(session.phase == Phase::Idle);
     let (_, delivered) = session.result.take().unwrap();
     println!(
         "Test field received edited text {:?} after release",
         released.elapsed()
     );
+    assert!(entry.outcome == Outcome::Edited(delivered.clone()));
     assert!(delivered.to_ascii_lowercase().contains("friday"));
     assert!(!delivered.to_lowercase().contains("пятниц"));
     session.tick(&store, true);
@@ -164,7 +170,7 @@ fn stalled_input_preserves_recorded_words() {
     loop {
         match recording.try_event() {
             Some(Event::Final(text)) => {
-                assert_phrase_boundaries(&text);
+                assert_phrase_boundaries(&text.text);
                 break;
             }
             Some(Event::Error(reason)) => panic!("{reason}"),

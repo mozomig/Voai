@@ -46,6 +46,7 @@ pub struct ModelRow {
 
 #[derive(Clone, PartialEq)]
 pub struct Snapshot {
+    pub history: super::history::HistoryView,
     pub phase: Phase,
     pub transcript: String,
     pub elapsed_secs: u64,
@@ -74,6 +75,9 @@ pub struct Snapshot {
 }
 
 pub enum Command {
+    PlayEntry(i64),
+    StopPlayback,
+    DeleteEntry(i64),
     CaptureShortcut(bool),
     SetShortcut(String),
     SetMicrophone(Option<String>),

@@ -73,6 +73,7 @@ impl Desktop {
         match cx.open_window(options, move |window, cx| {
             let close_engine = engine.clone();
             window.on_window_should_close(cx, move |_, _| {
+                close_engine.borrow_mut().dispatch(Command::StopPlayback);
                 close_engine
                     .borrow_mut()
                     .dispatch(Command::TestFocus(false));
@@ -119,6 +120,18 @@ impl Desktop {
             for command in commands {
                 match command {
                     MenuCommand::Settings => self.show_settings(cx),
+                    MenuCommand::History => {
+                        self.show_settings(cx);
+                        if let Some(handle) = self.settings {
+                            let _ = handle.update(cx, |root, window, cx| {
+                                if let Ok(settings) = root.view().clone().downcast::<Settings>() {
+                                    settings.update(cx, |view, cx| {
+                                        view.navigate(settings::Page::History, window, cx)
+                                    });
+                                }
+                            });
+                        }
+                    }
                     MenuCommand::Quit => {
                         cx.quit();
                         return;
@@ -240,6 +253,7 @@ pub fn run(backend: Backend) {
                     .engine
                     .borrow_mut()
                     .dispatch(Command::CaptureShortcut(false));
+                desktop.engine.borrow_mut().dispatch(Command::StopPlayback);
                 let _ = handle.update(cx, |_, window, _| window.remove_window());
             }
         });

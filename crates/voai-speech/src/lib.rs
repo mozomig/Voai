@@ -15,7 +15,9 @@ use std::{
 };
 pub use worker::{validate_model, worker_main};
 
-const RATE: usize = 16_000;
+/// Mono sample rate shared by recognition and saved recordings.
+pub const SAMPLE_RATE: u32 = 16_000;
+const RATE: usize = SAMPLE_RATE as usize;
 const MIN_SAMPLES: usize = RATE / 8;
 const INPUT_TIMEOUT: Duration = Duration::from_secs(7);
 const MAX_SAMPLES: usize = RATE * 60 * 5;
@@ -23,11 +25,25 @@ const RECORDING: u8 = 0;
 const FINISHING: u8 = 1;
 const CANCELLED: u8 = 2;
 
+#[derive(Default)]
+pub struct FinalTranscript {
+    pub text: String,
+    pub samples: Vec<f32>,
+}
+
+impl std::fmt::Debug for FinalTranscript {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FinalTranscript")
+            .field("samples", &self.samples.len())
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Debug)]
 pub enum Event {
     Level(f32),
     Partial(String),
-    Final(String),
+    Final(FinalTranscript),
     Error(String),
     Interrupted(String),
 }
@@ -159,9 +175,9 @@ impl Session<'_> {
     fn run(
         &self,
         open: impl FnOnce(Arc<AtomicU8>) -> Result<audio::Microphone, String>,
-    ) -> Result<String, String> {
+    ) -> Result<FinalTranscript, String> {
         if self.state.load(Ordering::Acquire) != RECORDING {
-            return Ok(String::new());
+            return Ok(FinalTranscript::default());
         }
         let mut mic = open(self.state.clone())?;
         let mut worker = None;
@@ -224,26 +240,26 @@ impl Session<'_> {
             thread::sleep(Duration::from_millis(15));
         }
         if self.state.load(Ordering::Acquire) == CANCELLED {
-            return Ok(String::new());
+            return Ok(FinalTranscript::default());
         }
         mic.finish(&mut pcm)?;
         pcm.truncate(MAX_SAMPLES);
         if pcm.len() < MIN_SAMPLES {
-            return Ok(String::new());
+            return Ok(FinalTranscript::default());
         }
         if let Some(active) = worker
             && let Ok(text) = self.finish(&active, &pcm, pending.is_some())
         {
             active.keep_warm();
-            return Ok(text);
+            return Ok(FinalTranscript { text, samples: pcm });
         }
         if self.state.load(Ordering::Acquire) == CANCELLED {
-            return Ok(String::new());
+            return Ok(FinalTranscript::default());
         }
         let fresh = self.worker()?;
         let text = self.finish(&fresh, &pcm, false)?;
         fresh.keep_warm();
-        Ok(text)
+        Ok(FinalTranscript { text, samples: pcm })
     }
 
     fn update_partial(
@@ -321,7 +337,7 @@ mod tests {
         loop {
             match recording.try_event() {
                 Some(Event::Final(text)) => {
-                    assert!(text.is_empty());
+                    assert!(text.text.is_empty());
                     break;
                 }
                 Some(Event::Error(reason)) => panic!("Unnecessary worker startup: {reason}"),
@@ -337,7 +353,10 @@ mod tests {
         let recording = Recording {
             state: Arc::new(AtomicU8::new(RECORDING)),
             events: Arc::new(Mutex::new(Mailbox {
-                terminal: Some(Event::Final("previous session".into())),
+                terminal: Some(Event::Final(FinalTranscript {
+                    text: "previous session".into(),
+                    samples: vec![],
+                })),
                 ..Mailbox::default()
             })),
         };

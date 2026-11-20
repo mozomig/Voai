@@ -18,6 +18,11 @@ futures-lite = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
+chrono = "0.4"
+rusqlite = "0.37"
+hound = "3.5"
+objc2-avf-audio = { version = "0.3.2", default-features = false, features = ["std", "AVAudioPlayer"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData"] }
 fs2 = "0.4"
 objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["std", "AVMediaFormat", "AVCaptureDevice", "block2"] }
 block2 = "0.6"
@@ -35,7 +40,7 @@ members = ["crates/voai-models", "crates/voai-speech", "crates/voai-text-helper"
 default-members = ["."]
 
 [workspace.package]
-version = "1.0.4"
+version = "1.1.0"
 edition = "2024"
 
 [profile.dev]

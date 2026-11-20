@@ -1,6 +1,8 @@
 mod connections;
 mod downloads;
+mod history;
 mod hotkeys;
+pub use history::Outcome as HistoryOutcome;
 mod server;
 mod session;
 mod settings;
@@ -26,6 +28,7 @@ pub struct Backend {
     dir: PathBuf,
     settings: Settings,
     session: Session,
+    history: history::History,
     downloads: Downloads,
     connections: Connections,
     shortcuts: Option<Shortcuts>,
@@ -89,7 +92,9 @@ impl Backend {
         if settings.mode == Mode::Server {
             server.request(settings.server_url.clone(), &notify);
         }
+        let history = history::History::new(dir.join("History"), notify.clone());
         let mut backend = Self {
+            history,
             _instance: lock,
             dir,
             settings,
@@ -128,6 +133,7 @@ impl Backend {
         let mut models = self.downloads.rows(s);
         models.extend(self.connections.rows(s));
         Snapshot {
+            history: self.history.view.clone(),
             phase: self.session.phase,
             transcript: self.session.text.clone(),
             elapsed_secs: self.session.elapsed(),
@@ -181,6 +187,21 @@ impl Backend {
         );
         let mut next = self.settings.clone();
         match command {
+            Command::PlayEntry(id) => {
+                if matches!(self.session.phase, Phase::Listening | Phase::Finishing) {
+                    return Err("Сначала завершите диктовку.".into());
+                }
+                self.history.send(history::Request::Play(id));
+                return Ok(());
+            }
+            Command::StopPlayback => {
+                self.history.send(history::Request::Stop);
+                return Ok(());
+            }
+            Command::DeleteEntry(id) => {
+                self.history.send(history::Request::Delete(id));
+                return Ok(());
+            }
             Command::CaptureShortcut(start) => {
                 let keys = self
                     .shortcuts
@@ -376,6 +397,7 @@ impl Backend {
             return Ok(());
         }
         self.message.clear();
+        self.history.send(history::Request::Stop);
         let own_window = macos::app_frontmost();
         let target = if own_window && self.test_focus {
             Destination::Test
@@ -452,7 +474,10 @@ impl Backend {
         if std::mem::take(&mut self.use_original_pending) {
             self.session.use_original(trial);
         }
-        self.session.tick(&self.downloads.store, trial);
+        if let Some(entry) = self.session.tick(&self.downloads.store, trial) {
+            self.history.send(history::Request::Save(entry));
+        }
+        self.history.poll();
         if let Some(keys) = &mut self.shortcuts {
             keys.listen_for_cancel(self.session.phase != Phase::Idle);
         }

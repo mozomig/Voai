@@ -1,4 +1,5 @@
 mod dictation;
+mod history;
 mod model_switcher;
 mod models;
 mod processing;
@@ -19,6 +20,7 @@ pub(super) enum Page {
     Dictation,
     Models,
     Processing,
+    History,
 }
 
 impl Page {
@@ -27,6 +29,7 @@ impl Page {
             Self::Dictation => "Диктовка",
             Self::Models => "Модели",
             Self::Processing => "Обработка",
+            Self::History => "История",
         }
     }
     fn icon(self) -> &'static str {
@@ -34,6 +37,7 @@ impl Page {
             Self::Dictation => "mic",
             Self::Models => "models",
             Self::Processing => "sliders",
+            Self::History => "history",
         }
     }
 }
@@ -51,6 +55,8 @@ pub(super) struct Settings {
     engine: Engine,
     snapshot: Snapshot,
     page: Page,
+    expanded_entry: Option<i64>,
+    confirm_delete: Option<i64>,
     text_models: bool,
     capture: bool,
     right_command_pending: bool,
@@ -133,6 +139,8 @@ impl Settings {
             last_test: snapshot.test_result.as_ref().map(|(id, _)| *id),
             snapshot,
             page: Page::Dictation,
+            expanded_entry: None,
+            confirm_delete: None,
             text_models: false,
             capture: false,
             right_command_pending: false,
@@ -217,6 +225,14 @@ impl Settings {
             self.last_test = Some(*id);
             self.send(Command::TestResultHandled(*id));
         }
+        if self.page == Page::History
+            && (self.snapshot.history.entries.is_empty()
+                || self
+                    .expanded_entry
+                    .is_some_and(|id| !snapshot.history.entries.iter().any(|entry| entry.id == id)))
+        {
+            self.expanded_entry = snapshot.history.entries.first().map(|e| e.id);
+        }
         self.snapshot = snapshot;
         cx.notify();
     }
@@ -236,8 +252,15 @@ impl Settings {
         }
     }
 
-    fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         if self.page != page {
+            if self.page == Page::History {
+                self.send(Command::StopPlayback);
+            }
+            if page == Page::History {
+                self.expanded_entry = self.snapshot.history.entries.first().map(|e| e.id);
+            }
+            self.confirm_delete = None;
             self.set_test_ready(false);
             self.show_server_key = false;
             self.key.update(cx, |key, cx| key.set_value("", window, cx));
@@ -340,7 +363,13 @@ impl Settings {
             .border_r_1()
             .border_color(p.rule)
             .children(
-                [Page::Dictation, Page::Models, Page::Processing].map(|page| {
+                [
+                    Page::Dictation,
+                    Page::Models,
+                    Page::Processing,
+                    Page::History,
+                ]
+                .map(|page| {
                     let selected = page == self.page;
                     Button::new(page.title())
                         .ghost()
@@ -488,6 +517,7 @@ impl Render for Settings {
             Page::Dictation => self.dictation(p, cx),
             Page::Models => self.models(p, cx),
             Page::Processing => self.processing(p, cx),
+            Page::History => self.history(p, cx),
         };
         div()
             .size_full()

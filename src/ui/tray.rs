@@ -7,6 +7,7 @@ use tray_icon::{
 
 pub(super) enum MenuCommand {
     Settings,
+    History,
     Quit,
 }
 
@@ -15,6 +16,7 @@ pub(super) struct StatusItem {
     status: MenuItem,
     shortcut: MenuItem,
     settings: MenuItem,
+    history: MenuItem,
     quit: MenuItem,
     last_labels: [String; 2],
 }
@@ -24,11 +26,13 @@ impl StatusItem {
         let status = MenuItem::new("Voai", false, None);
         let shortcut = MenuItem::new("", false, None);
         let settings = MenuItem::new("Настройки…", true, None);
+        let history = MenuItem::new("История диктовки", true, None);
         let quit = MenuItem::new("Выйти из Voai", true, None);
         let menu = Menu::with_items(&[
             &status,
             &shortcut,
             &PredefinedMenuItem::separator(),
+            &history,
             &settings,
             &quit,
         ])?;
@@ -54,6 +58,7 @@ impl StatusItem {
             status,
             shortcut,
             settings,
+            history,
             quit,
             last_labels: Default::default(),
         })
@@ -90,6 +95,8 @@ impl StatusItem {
         MenuEvent::receiver().try_iter().filter_map(|e| {
             if e.id == self.settings.id() {
                 Some(MenuCommand::Settings)
+            } else if e.id == self.history.id() {
+                Some(MenuCommand::History)
             } else if e.id == self.quit.id() {
                 Some(MenuCommand::Quit)
             } else {
