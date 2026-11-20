@@ -4,6 +4,7 @@ mod history;
 mod model_switcher;
 mod models;
 mod processing;
+mod telegram;
 
 use gpui::{prelude::*, *};
 use gpui_component::{
@@ -23,6 +24,7 @@ pub(super) enum Page {
     Processing,
     History,
     Files,
+    Telegram,
 }
 
 impl Page {
@@ -33,6 +35,7 @@ impl Page {
             Self::Processing => "Обработка",
             Self::History => "История",
             Self::Files => "Расшифровка",
+            Self::Telegram => "Telegram",
         }
     }
     fn icon(self) -> &'static str {
@@ -42,6 +45,7 @@ impl Page {
             Self::Processing => "sliders",
             Self::History => "history",
             Self::Files => "file",
+            Self::Telegram => "telegram",
         }
     }
 }
@@ -75,6 +79,7 @@ pub(super) struct Settings {
     focus: FocusHandle,
     test: Entity<InputState>,
     key: Entity<InputState>,
+    telegram_token: Entity<InputState>,
     prompt: Entity<InputState>,
     prompt_needs_layout: bool,
     server_url: Entity<InputState>,
@@ -97,6 +102,7 @@ impl Settings {
                 .placeholder("Нажмите здесь и попробуйте диктовать")
         });
         let key = cx.new(|cx| InputState::new(window, cx).masked(true));
+        let telegram_token = Self::new_telegram_token(window, cx);
         cx.subscribe_in(&test, window, |this, _, event, _, _| match event {
             InputEvent::Change => this.edit_revision = this.edit_revision.wrapping_add(1),
             InputEvent::Blur => this.set_test_ready(false),
@@ -163,6 +169,7 @@ impl Settings {
             focus,
             test,
             key,
+            telegram_token,
             prompt,
             prompt_needs_layout: true,
             server_url,
@@ -272,6 +279,9 @@ impl Settings {
 
     pub(super) fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         if self.page != page {
+            if self.page == Page::Telegram {
+                self.telegram_token = Self::new_telegram_token(window, cx);
+            }
             if self.page == Page::Files {
                 self.send(Command::File(crate::app::FileCommand::Stop));
                 self.files_ui.leave();
@@ -397,6 +407,7 @@ impl Settings {
                     Page::Models,
                     Page::Processing,
                     Page::Files,
+                    Page::Telegram,
                     Page::History,
                 ]
                 .map(|page| {
@@ -549,6 +560,7 @@ impl Render for Settings {
             Page::Processing => self.processing(p, cx),
             Page::History => self.history(p, cx),
             Page::Files => self.files(p, cx),
+            Page::Telegram => self.telegram(p, cx),
         };
         div()
             .size_full()

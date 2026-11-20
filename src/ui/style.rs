@@ -15,6 +15,7 @@ impl AssetSource for Artwork {
             "arrow" => include_bytes!("icons/arrow.svg"),
             "chevron" => include_bytes!("icons/chevron.svg"),
             "file" => include_bytes!("icons/file.svg"),
+            "telegram" => include_bytes!("icons/telegram.svg"),
             "disk" => include_bytes!("icons/disk.svg"),
             "check" | "icons/check.svg" => include_bytes!("icons/check.svg"),
             _ => return Ok(None),

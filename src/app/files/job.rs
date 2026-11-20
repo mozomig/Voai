@@ -43,25 +43,29 @@ impl Tools {
 
 pub(super) struct Work {
     pub cancelled: Arc<AtomicBool>,
-    pub updates: mpsc::Sender<Update>,
-    pub wake: async_channel::Sender<()>,
+    pub observer: Option<(mpsc::Sender<Update>, async_channel::Sender<()>)>,
 }
 
 impl Work {
-    fn check(&self) -> Result<(), String> {
+    pub(super) fn check(&self) -> Result<(), String> {
         if self.cancelled.load(Ordering::Acquire) {
             Err("Импорт отменён.".into())
         } else {
             Ok(())
         }
     }
+    pub(super) fn notify(&self, update: Update) {
+        if let Some((updates, wake)) = &self.observer {
+            let _ = updates.send(update);
+            let _ = wake.try_send(());
+        }
+    }
     pub(super) fn progress(&self, stage: &str, percent: u8) {
-        let _ = self.updates.send(Update::Progress(FileProgress {
+        self.notify(Update::Progress(FileProgress {
             stage: stage.to_owned(),
             percent,
             cancellable: true,
         }));
-        let _ = self.wake.try_send(());
     }
 }
 
@@ -80,6 +84,7 @@ struct EditedLine {
     text: String,
 }
 
+#[derive(Clone)]
 pub(super) struct Pipeline {
     pub model: PathBuf,
     pub language: String,

@@ -75,6 +75,11 @@ impl FileControls {
         }
     }
 
+    pub(super) fn configure(&mut self) {
+        self.leave();
+        self.configuring = true;
+    }
+
     pub(super) fn cancel_edit(&mut self) -> bool {
         self.editing.take().is_some()
     }
@@ -230,8 +235,7 @@ impl Settings {
             actions = actions.child(button("file-new", "Новая расшифровка", p).on_click(
                 cx.listener(|this, _, _, cx| {
                     this.send(Command::File(FileCommand::Stop));
-                    this.files_ui.leave();
-                    this.files_ui.configuring = true;
+                    this.files_ui.configure();
                     cx.notify();
                 }),
             ));

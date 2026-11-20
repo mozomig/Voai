@@ -9,7 +9,7 @@ impl Settings {
             .pt(px(10.))
             .border_t_1()
             .border_color(p.rule)
-            .when(self.page == Page::Files, |d| {
+            .when(matches!(self.page, Page::Files | Page::Telegram), |d| {
                 d.child(text("Для диктовки", 10., p.muted).mb_1().pl_1())
             })
             .child(

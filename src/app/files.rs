@@ -87,6 +87,52 @@ impl Default for FileOptions {
     }
 }
 
+impl FileOptions {
+    fn pipeline(
+        &self,
+        settings: &super::Settings,
+        store: &voai_models::ModelStore,
+        voices: Option<PathBuf>,
+    ) -> Result<job::Pipeline, String> {
+        let speech = self.speech.as_deref().unwrap_or(&settings.speech);
+        Ok(job::Pipeline {
+            model: settings.path_for(store, speech, voai_models::ModelKind::Speech)?,
+            language: settings.language.clone(),
+            voices,
+            editor: self
+                .text
+                .as_deref()
+                .map(|id| settings.path_for(store, id, voai_models::ModelKind::Text))
+                .transpose()?,
+            prompt: settings.processing_prompt.clone(),
+        })
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct BotPipeline {
+    tools: Tools,
+    pipeline: job::Pipeline,
+}
+
+impl BotPipeline {
+    pub(super) fn transcribe(
+        &self,
+        source: PathBuf,
+        cancelled: Arc<AtomicBool>,
+    ) -> Result<String, String> {
+        let work = Work {
+            cancelled,
+            observer: None,
+        };
+        work.check()?;
+        let document = job::import(&self.tools, source, &self.pipeline, &work)?;
+        let text = document.paragraphs().join("\n\n");
+        work.check()?;
+        Ok(text)
+    }
+}
+
 enum ResultView {
     Library(Vec<FileSummary>, FileOptions, Option<PathBuf>),
     Imported(FileDocument),
@@ -116,6 +162,7 @@ pub(super) struct Files {
     tools: Tools,
     downloaded: Option<PathBuf>,
     options: FileOptions,
+    options_loaded: bool,
     wake: async_channel::Sender<()>,
     job: Option<Job>,
     playback: Option<ChildGuard>,
@@ -130,6 +177,7 @@ impl Files {
             model_dir: data.join("Diarization"),
             tools: Tools::bundled(),
             options: FileOptions::default(),
+            options_loaded: false,
             downloaded: None,
             wake,
             job: None,
@@ -162,14 +210,12 @@ impl Files {
         let cancelled = Arc::new(AtomicBool::new(false));
         let ctx = Work {
             cancelled: cancelled.clone(),
-            updates: tx,
-            wake: self.wake.clone(),
+            observer: Some((tx, self.wake.clone())),
         };
         let dir = self.dir.clone();
         let worker = thread::spawn(move || {
             let result = task(&dir, &ctx);
-            let _ = ctx.updates.send(Update::Done(result));
-            let _ = ctx.wake.try_send(());
+            ctx.notify(Update::Done(result));
         });
         self.view.error = None;
         self.view.progress = Some(FileProgress {
@@ -186,6 +232,7 @@ impl Files {
 
     fn snapshot_voices(&mut self, choice: FileOptions, downloaded: Option<PathBuf>) {
         self.options = choice.clone();
+        self.options_loaded = true;
         self.view.speech_model = choice.speech.clone().unwrap_or_default();
         self.view.text_model = choice.text.clone();
         self.view.identify_speakers = choice.identify_speakers;
@@ -204,6 +251,20 @@ impl Files {
         } else {
             self.downloaded.clone()
         }
+    }
+
+    pub(super) fn bot_pipeline(
+        &self,
+        settings: &super::Settings,
+        store: &voai_models::ModelStore,
+    ) -> Result<BotPipeline, String> {
+        if !self.options_loaded {
+            return Err("Настройки расшифровки пока недоступны. Повторите отправку позже.".into());
+        }
+        Ok(BotPipeline {
+            tools: self.tools.clone(),
+            pipeline: self.options.pipeline(settings, store, None)?,
+        })
     }
 
     pub fn stop(&mut self) {
@@ -333,21 +394,7 @@ impl Files {
                 let tools = self.tools.clone();
                 let voices = self.selected_voices().filter(|_| options.identify_speakers);
                 self.start("Подготовка", true, move |_, work| {
-                    let speech_id = options.speech.as_deref().unwrap_or(&settings.speech);
-                    let model =
-                        settings.path_for(&store, speech_id, voai_models::ModelKind::Speech)?;
-                    let editor = options
-                        .text
-                        .as_deref()
-                        .map(|id| settings.path_for(&store, id, voai_models::ModelKind::Text))
-                        .transpose()?;
-                    let pipeline = job::Pipeline {
-                        model,
-                        language: settings.language,
-                        voices,
-                        editor,
-                        prompt: settings.processing_prompt,
-                    };
+                    let pipeline = options.pipeline(&settings, &store, voices)?;
                     job::import(&tools, source, &pipeline, work).map(ResultView::Imported)
                 });
             }

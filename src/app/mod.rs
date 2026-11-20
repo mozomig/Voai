@@ -9,6 +9,8 @@ pub use history::Outcome as HistoryOutcome;
 mod server;
 mod session;
 mod settings;
+mod telegram;
+pub use telegram::{TelegramCommand, TelegramView};
 mod types;
 
 use crate::macos;
@@ -33,6 +35,7 @@ pub struct Backend {
     session: Session,
     history: history::History,
     files: files::Files,
+    telegram: telegram::Telegram,
     downloads: Downloads,
     connections: Connections,
     shortcuts: Option<Shortcuts>,
@@ -98,7 +101,9 @@ impl Backend {
         }
         let history = history::History::new(dir.join("History"), notify.clone());
         let files = files::Files::new(&dir, notify.clone());
+        let telegram = telegram::Telegram::new(&dir, notify.clone());
         let mut backend = Self {
+            telegram,
             files,
             history,
             _instance: lock,
@@ -143,6 +148,7 @@ impl Backend {
         let mut models = self.downloads.rows(s);
         models.extend(self.connections.rows(s));
         Snapshot {
+            telegram: self.telegram.view.clone(),
             files: {
                 let mut view = self.files.view.clone();
                 if view.speech_model.is_empty() {
@@ -206,6 +212,10 @@ impl Backend {
         );
         let mut next = self.settings.clone();
         match command {
+            Command::Telegram(cmd) => {
+                self.telegram.dispatch(cmd);
+                return Ok(());
+            }
             Command::File(cmd) => {
                 if matches!(cmd, FileCommand::Play(_)) {
                     self.history.send(history::Request::Stop);
@@ -514,6 +524,10 @@ impl Backend {
         }
         self.history.poll();
         self.files.poll();
+        self.telegram.poll(|| {
+            self.files
+                .bot_pipeline(&self.settings, &self.downloads.store)
+        });
         if let Some(keys) = &mut self.shortcuts {
             keys.listen_for_cancel(self.session.phase != Phase::Idle);
         }

@@ -46,6 +46,7 @@ pub struct ModelRow {
 
 #[derive(Clone, PartialEq)]
 pub struct Snapshot {
+    pub telegram: super::TelegramView,
     pub files: super::files::FileView,
     pub history: super::history::HistoryView,
     pub phase: Phase,
@@ -78,6 +79,7 @@ pub struct Snapshot {
 }
 
 pub enum Command {
+    Telegram(super::TelegramCommand),
     File(super::files::FileCommand),
     PlayEntry(i64),
     StopPlayback,

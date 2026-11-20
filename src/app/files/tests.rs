@@ -194,8 +194,7 @@ fn imports_media_with_packaged_workers() {
     let (wake, _) = async_channel::bounded(1);
     let work = Work {
         cancelled: Arc::new(false.into()),
-        updates,
-        wake,
+        observer: Some((updates, wake)),
     };
     let started = Instant::now();
     let progress = thread::spawn(move || {
@@ -239,6 +238,44 @@ fn imports_media_with_packaged_workers() {
         read.lines.last().unwrap().end_ms,
         started.elapsed().as_secs_f32()
     );
+}
+
+#[test]
+#[ignore = "needs signed helpers, local Whisper weights, a voice message and a video fixture"]
+fn transcribes_bot_voice_and_video_with_packaged_workers() {
+    let path = |key| PathBuf::from(std::env::var_os(key).expect("Missing QA path"));
+    let data = tempfile::tempdir().unwrap();
+    let store = voai_models::ModelStore::new(data.path().join("Models"));
+    let model = voai_models::ConnectedModel::connect(
+        &path("VOAI_FILE_QA_WHISPER"),
+        voai_models::ModelKind::Speech,
+        u64::MAX,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let options = FileOptions {
+        speech: Some(model.id()),
+        ..Default::default()
+    };
+    let mut settings = super::super::Settings::default();
+    settings.connect(model);
+    let library = store::Store::open(&data.path().join("Transcripts")).unwrap();
+    library.save_choice(&options).unwrap();
+    let (wake, _) = async_channel::bounded(1);
+    let mut files = Files::new(data.path(), wake);
+    until_idle(&mut files);
+    files.tools = Tools::from_executable(path("VOAI_FILE_QA_APP").join("Contents/MacOS/voai"));
+    let bot = files.bot_pipeline(&settings, &store).unwrap();
+    for media in ["VOAI_BOT_QA_VOICE", "VOAI_BOT_QA_VIDEO"] {
+        let transcript = bot.transcribe(path(media), Arc::new(false.into())).unwrap();
+        assert!(transcript.chars().any(char::is_alphabetic));
+        assert_eq!(
+            bot.transcribe(path(media), Arc::new(true.into()))
+                .unwrap_err(),
+            "Импорт отменён."
+        );
+    }
+    assert!(files.view.document.is_none() && library.list().unwrap().is_empty());
 }
 
 #[test]
