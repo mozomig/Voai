@@ -32,7 +32,7 @@ impl Page {
             Self::Models => "Модели",
             Self::Processing => "Обработка",
             Self::History => "История",
-            Self::Files => "Файлы",
+            Self::Files => "Расшифровка",
         }
     }
     fn icon(self) -> &'static str {
@@ -136,7 +136,8 @@ impl Settings {
             },
         )
         .detach();
-        let files_ui = files::FileControls::new(window, cx);
+        let mut files_ui = files::FileControls::new(window, cx);
+        files_ui.sync(&Default::default(), &snapshot.files);
         let focus = cx.focus_handle();
         cx.on_blur(&focus, window, |this, _, cx| this.end_capture(cx))
             .detach();
@@ -393,8 +394,8 @@ impl Settings {
                     Page::Dictation,
                     Page::Models,
                     Page::Processing,
-                    Page::History,
                     Page::Files,
+                    Page::History,
                 ]
                 .map(|page| {
                     let selected = page == self.page;
@@ -585,17 +586,9 @@ impl Render for Settings {
                             .px(px(28.))
                             .py(px(20.))
                             .child(
-                                text(
-                                    if self.page == Page::Files {
-                                        "Расшифровка файла"
-                                    } else {
-                                        self.page.title()
-                                    },
-                                    24.,
-                                    p.ink,
-                                )
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .mb(px(16.)),
+                                text(self.page.title(), 24., p.ink)
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .mb(px(16.)),
                             )
                             .when(
                                 !self.snapshot.message.is_empty()

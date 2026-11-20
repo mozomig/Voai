@@ -146,6 +146,42 @@ fn timestamp(ms: u64, millis: bool) -> String {
 }
 
 impl FileDocument {
+    /// Join the recognition chunks into reading paragraphs. Keep the timed lines
+    /// intact for playback, speaker corrections and subtitle export.
+    pub fn paragraphs(&self) -> Vec<String> {
+        let mut paragraphs = Vec::new();
+        let mut current = String::new();
+        let mut end_ms = 0;
+        let mut length = 0;
+        for line in &self.lines {
+            let text = line.text.trim();
+            if text.is_empty() {
+                continue;
+            }
+            let gap = line.start_ms.saturating_sub(end_ms);
+            if !current.is_empty()
+                && (gap >= 2_000
+                    || length >= 600
+                    || (length >= 300 && current.ends_with(['.', '!', '?', '…'])))
+            {
+                paragraphs.push(std::mem::take(&mut current));
+                length = 0;
+            }
+            if !current.is_empty()
+                && !text.starts_with(['.', ',', '!', '?', ':', ';', '…', ')', '»'])
+            {
+                current.push(' ');
+            }
+            current.push_str(text);
+            length += text.chars().count();
+            end_ms = line.end_ms;
+        }
+        if !current.is_empty() {
+            paragraphs.push(current);
+        }
+        paragraphs
+    }
+
     pub(super) fn export_text(&self, format: ExportFormat) -> String {
         let mut out = String::new();
         for (i, line) in self.lines.iter().enumerate() {

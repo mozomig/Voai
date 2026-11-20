@@ -123,7 +123,12 @@ impl Settings {
             .child(
                 row()
                     .gap_1()
-                    .child(text(name.to_owned(), 12., p.ink).max_w(px(180.)).truncate())
+                    .child(
+                        text(name.to_owned(), 13., p.accent)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .max_w(px(180.))
+                            .truncate(),
+                    )
                     .child(icon("chevron", p.muted, 12.)),
             )
             .dropdown_menu(move |mut menu, _, _| {
@@ -171,7 +176,7 @@ impl Settings {
                     );
                 if let Some(id) = speaker {
                     let rename = owner.clone();
-                    menu = menu.item(PopupMenuItem::new("Переименовать во всём файле…").on_click(
+                    menu = menu.item(PopupMenuItem::new("Переименовать спикера…").on_click(
                         move |_, window, cx| {
                             let _ = rename.update(cx, |this, cx| {
                                 this.edit_speaker(SpeakerEdit::Rename(id), window, cx)
@@ -190,11 +195,12 @@ impl Settings {
             .child(
                 row()
                     .gap_2()
+                    .child(menu)
                     .child(
                         Button::new(("file-time", index))
                             .small()
                             .ghost()
-                            .text_color(p.accent)
+                            .text_color(if playing { p.accent } else { p.muted })
                             .tooltip(if playing {
                                 "Остановить"
                             } else {
@@ -211,7 +217,6 @@ impl Settings {
                                     .dispatch(Command::File(FileCommand::Play(index)))
                             }),
                     )
-                    .child(menu)
                     .when(line.original.is_some(), |r| {
                         r.child(
                             Button::new(("file-original", index))

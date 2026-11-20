@@ -88,6 +88,36 @@ fn saves_renames_and_exports_the_selected_document() {
 }
 
 #[test]
+fn plain_document_joins_chunks_and_preserves_timing_when_reopened() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("voice.wav");
+    fs::write(&source, b"fixture").unwrap();
+    let mut doc = FileDocument {
+        id: String::new(),
+        title: "Запись".into(),
+        source_stamp: SourceStamp::read(&source).unwrap(),
+        source,
+        speakers: Default::default(),
+        lines: align(
+            vec![
+                word(0, 150, "Первая"),
+                word(1200, 1800, "фраза."),
+                word(7500, 9700, "Вторая фраза."),
+            ],
+            vec![],
+        ),
+        warning: Some("Расшифровано без определения спикеров. Обработка прервалась.".into()),
+    };
+    let db = store::Store::open(dir.path()).unwrap();
+    db.save(&mut doc).unwrap();
+    let read = db.load(doc.id).unwrap();
+    assert_eq!(read.lines.len(), 3);
+    assert_eq!(read.paragraphs(), ["Первая фраза.", "Вторая фраза."]);
+    assert_eq!(read.warning.as_deref(), Some("Обработка прервалась."));
+    assert_eq!(read.lines[2].start_ms, 7500);
+}
+
+#[test]
 fn file_model_choices_survive_reopening_the_library() {
     let dir = tempfile::tempdir().unwrap();
     let db = store::Store::open(dir.path()).unwrap();

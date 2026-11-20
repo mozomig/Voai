@@ -249,7 +249,7 @@ pub(super) fn import(
             None
         }
     } else {
-        Some("Расшифровано без определения спикеров.".into())
+        None
     };
     let mut lines = align(words, turns);
     // Use chronological labels regardless of the clustering backend's internal numbering.

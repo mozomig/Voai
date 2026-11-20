@@ -89,6 +89,15 @@ impl Store {
             .map_err(|_| "Расшифровка недоступна.")?;
         let mut doc: FileDocument =
             serde_json::from_slice(&bytes).map_err(|_| "Не удалось прочитать расшифровку.")?;
+        // Version 1.3.0 stored the ordinary text-only mode as a warning.
+        if let Some(rest) = doc
+            .warning
+            .as_deref()
+            .and_then(|s| s.strip_prefix("Расшифровано без определения спикеров."))
+        {
+            let rest = rest.trim();
+            doc.warning = (!rest.is_empty()).then(|| rest.to_owned());
+        }
         doc.id = id;
         Ok(doc)
     }

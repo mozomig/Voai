@@ -19,6 +19,8 @@ enum SpeakerEdit {
 pub(super) struct FileControls {
     configuring: bool,
     original: Option<usize>,
+    timed: bool,
+    paragraphs: Arc<[SharedString]>,
     list: ListState,
     editor: Entity<InputState>,
     editing: Option<SpeakerEdit>,
@@ -37,6 +39,8 @@ impl FileControls {
         Self {
             configuring: false,
             original: None,
+            timed: false,
+            paragraphs: Default::default(),
             list: ListState::new(0, ListAlignment::Top, px(160.)),
             editor,
             editing: None,
@@ -45,11 +49,27 @@ impl FileControls {
     }
 
     pub(super) fn sync(&mut self, previous: &FileView, next: &FileView) {
+        if let Some(doc) = &next.document
+            && previous
+                .document
+                .as_ref()
+                .is_none_or(|old| !Arc::ptr_eq(old, doc))
+        {
+            self.paragraphs = if doc.speakers.is_empty() {
+                doc.paragraphs()
+                    .into_iter()
+                    .map(SharedString::from)
+                    .collect()
+            } else {
+                Default::default()
+            };
+        }
         if previous.document.as_ref().map(|doc| &doc.id)
             != next.document.as_ref().map(|doc| &doc.id)
         {
             self.leave();
             self.configuring = false;
+            self.timed = false;
             self.list
                 .reset(next.document.as_ref().map_or(0, |doc| doc.lines.len()));
         }
@@ -207,14 +227,14 @@ impl Settings {
         let configuring = files.document.is_none() || self.files_ui.configuring;
         let mut actions = row().gap_2();
         if !configuring {
-            actions = actions.child(button("file-new", "Новый файл…", p).on_click(cx.listener(
-                |this, _, _, cx| {
+            actions = actions.child(button("file-new", "Новая расшифровка", p).on_click(
+                cx.listener(|this, _, _, cx| {
                     this.send(Command::File(FileCommand::Stop));
                     this.files_ui.leave();
                     this.files_ui.configuring = true;
                     cx.notify();
-                },
-            )));
+                }),
+            ));
         }
         if !files.library.is_empty() {
             let library = files.library.clone();
@@ -251,6 +271,7 @@ impl Settings {
         let Some(doc) = files.document.as_ref() else {
             return body;
         };
+        let plain = doc.speakers.is_empty() && !self.files_ui.timed;
         let owner = cx.entity().downgrade();
         let export = button("file-export", "Экспорт ▾", p).dropdown_menu(move |mut menu, _, _| {
             for (label, format) in [
@@ -276,6 +297,26 @@ impl Settings {
                             .min_w_0()
                             .font_weight(FontWeight::SEMIBOLD),
                     )
+                    .when(doc.speakers.is_empty() && !doc.lines.is_empty(), |r| {
+                        r.child(
+                            button(
+                                "file-timed",
+                                if plain {
+                                    "По фрагментам"
+                                } else {
+                                    "Текст"
+                                },
+                                p,
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.files_ui.timed = !this.files_ui.timed;
+                                this.files_ui.leave();
+                                this.send(Command::File(FileCommand::Stop));
+                                this.files_ui.list.reset(0);
+                                cx.notify();
+                            })),
+                        )
+                    })
                     .when(!doc.lines.is_empty(), |r| r.child(export)),
             )
             .children(doc.warning.as_ref().map(|w| text(w.clone(), 12., p.muted)))
@@ -289,10 +330,23 @@ impl Settings {
         }
         let owner = cx.entity().downgrade();
         let doc = doc.clone();
-        if self.files_ui.list.item_count() != doc.lines.len() {
-            self.files_ui.list.reset(doc.lines.len());
+        let paragraphs = self.files_ui.paragraphs.clone();
+        let count = if plain {
+            paragraphs.len()
+        } else {
+            doc.lines.len()
+        };
+        if self.files_ui.list.item_count() != count {
+            self.files_ui.list.reset(count);
         }
         let rows = gpui::list(self.files_ui.list.clone(), move |index, _, cx| {
+            if plain {
+                return text(paragraphs[index].clone(), 15., p.ink)
+                    .w_full()
+                    .line_height(px(23.))
+                    .pb_3()
+                    .into_any_element();
+            }
             let Some(view) = owner.upgrade() else {
                 return div().into_any_element();
             };
