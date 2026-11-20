@@ -4,6 +4,7 @@ mod files;
 mod history;
 mod model_switcher;
 mod models;
+mod onboarding;
 mod processing;
 mod telegram;
 
@@ -71,6 +72,7 @@ pub(super) struct Settings {
     engine: Engine,
     snapshot: Snapshot,
     page: Page,
+    intro: Option<onboarding::Step>,
     files_ui: files::FileControls,
     expanded_entry: Option<i64>,
     confirm_delete: Option<i64>,
@@ -173,6 +175,7 @@ impl Settings {
         Self {
             engine,
             last_test: snapshot.test_result.as_ref().map(|(id, _)| *id),
+            intro: (!snapshot.onboarding_complete).then_some(onboarding::Step::Welcome),
             snapshot,
             page: Page::Dictation,
             files_ui,
@@ -214,7 +217,8 @@ impl Settings {
     /// Verify the same edit revision and UTF-16 selection just before the
     /// backend processes an input event or delivers a completed phrase.
     pub(super) fn check_test_target(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let focused = self.page == Page::Dictation
+        let focused = self.intro.is_none()
+            && self.page == Page::Dictation
             && window.is_window_active()
             && self.test.read(cx).focus_handle(cx).is_focused(window);
         let selection = if focused {
@@ -307,6 +311,7 @@ impl Settings {
     }
 
     pub(super) fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
+        self.intro = None;
         if self.page != page {
             if self.page == Page::Telegram {
                 self.telegram_token = Self::new_telegram_token(window, cx);
@@ -583,15 +588,7 @@ impl Render for Settings {
             });
         }
         let p = Palette::dark();
-        let page = match self.page {
-            Page::Dictation => self.dictation(p, cx),
-            Page::Models => self.models(p, cx),
-            Page::Processing => self.processing(p, cx),
-            Page::History => self.history(p, cx),
-            Page::Files => self.files(p, cx),
-            Page::Telegram => self.telegram(p, cx),
-        };
-        div()
+        let root = div()
             .size_full()
             .track_focus(&self.focus)
             .capture_key_down(cx.listener(Self::hotkey_input))
@@ -609,56 +606,68 @@ impl Render for Settings {
                         .child(mark(p.accent))
                         .child(text("Voai", 14., p.ink).font_weight(FontWeight::SEMIBOLD)),
                 ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.sidebar(p, cx))
-                    .child(
-                        col()
-                            .id(SharedString::from(format!(
-                                "settings-{}",
-                                self.page.title()
-                            )))
-                            .flex_1()
-                            .min_w_0()
-                            .h_full()
-                            .when(self.page != Page::Files, |view| view.overflow_y_scroll())
-                            .px(px(28.))
-                            .py(px(20.))
-                            .child(
-                                text(self.page.title(), 24., p.ink)
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .mb(px(16.)),
-                            )
-                            .when(
-                                !self.snapshot.message.is_empty()
-                                    && self.snapshot.phase == crate::app::Phase::Idle,
-                                |d| {
-                                    d.child(
-                                        row()
-                                            .mb_2()
-                                            .p_2()
-                                            .rounded_md()
-                                            .gap_2()
-                                            .bg(p.soft)
-                                            .child(
-                                                text(self.snapshot.message.clone(), 12., p.ink)
-                                                    .flex_1(),
-                                            )
-                                            .child(
-                                                button("dismiss", tr("ui.action.close"), p)
-                                                    .on_click(cx.listener(|this, _, _, _| {
-                                                        this.send(Command::DismissMessage)
-                                                    })),
+            );
+        if let Some(step) = self.intro {
+            return root.child(self.introduction(step, p, cx));
+        }
+        let page = match self.page {
+            Page::Dictation => self.dictation(p, cx),
+            Page::Models => self.models(p, cx),
+            Page::Processing => self.processing(p, cx),
+            Page::History => self.history(p, cx),
+            Page::Files => self.files(p, cx),
+            Page::Telegram => self.telegram(p, cx),
+        };
+        root.child(
+            div()
+                .flex()
+                .flex_1()
+                .min_h_0()
+                .child(self.sidebar(p, cx))
+                .child(
+                    col()
+                        .id(SharedString::from(format!(
+                            "settings-{}",
+                            self.page.title()
+                        )))
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
+                        .when(self.page != Page::Files, |view| view.overflow_y_scroll())
+                        .px(px(28.))
+                        .py(px(20.))
+                        .child(
+                            text(self.page.title(), 24., p.ink)
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .mb(px(16.)),
+                        )
+                        .when(
+                            !self.snapshot.message.is_empty()
+                                && self.snapshot.phase == crate::app::Phase::Idle,
+                            |d| {
+                                d.child(
+                                    row()
+                                        .mb_2()
+                                        .p_2()
+                                        .rounded_md()
+                                        .gap_2()
+                                        .bg(p.soft)
+                                        .child(
+                                            text(self.snapshot.message.clone(), 12., p.ink)
+                                                .flex_1(),
+                                        )
+                                        .child(
+                                            button("dismiss", tr("ui.action.close"), p).on_click(
+                                                cx.listener(|this, _, _, _| {
+                                                    this.send(Command::DismissMessage)
+                                                }),
                                             ),
-                                    )
-                                },
-                            )
-                            .child(page),
-                    ),
-            )
+                                        ),
+                                )
+                            },
+                        )
+                        .child(page),
+                ),
+        )
     }
 }

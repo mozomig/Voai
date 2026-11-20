@@ -2,7 +2,7 @@
 
 ## Your first dictation
 
-1. Open **Dictation** and grant microphone and Accessibility access in macOS.
+1. At first launch, choose **Set up permissions**. Allow the microphone to record speech and Accessibility to insert text in other apps. You can skip setup to transcribe files, or revisit it under **Dictation → Permissions → Quick start**.
 2. Pick a speech model. Download one from the catalog or select a Whisper model on disk.
 3. Click the test field, hold **⌥ Space**, speak, then release the keys. Try the same shortcut in your editor. Press **Esc** to cancel.
 

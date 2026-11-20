@@ -52,7 +52,13 @@ impl Settings {
         )
     }
 
-    fn permission(&self, allowed: bool, mic: bool, p: Palette, cx: &Context<Self>) -> AnyElement {
+    pub(super) fn permission(
+        &self,
+        allowed: bool,
+        mic: bool,
+        p: Palette,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         if allowed {
             row()
                 .gap_1()
@@ -287,7 +293,26 @@ impl Settings {
                     p,
                 ),
             ))
-            .child(group_title(tr("ui.dictation.permissions"), p))
+            .child(
+                row()
+                    .mt(px(14.))
+                    .mb_1()
+                    .justify_between()
+                    .child(
+                        text(tr("ui.dictation.permissions"), 12., p.ink)
+                            .font_weight(FontWeight::SEMIBOLD),
+                    )
+                    .child(
+                        button("open-introduction", tr("ui.intro.reopen"), p)
+                            .ghost()
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.end_capture(cx);
+                                window.focus(&this.focus);
+                                this.intro = Some(onboarding::Step::Welcome);
+                                cx.notify();
+                            })),
+                    ),
+            )
             .child(Self::setting(
                 p,
                 tr("ui.dictation.microphone"),

@@ -167,6 +167,7 @@ impl Backend {
             } else {
                 self.session.message.clone()
             },
+            onboarding_complete: s.onboarding_complete,
             shortcut: s.shortcut.clone(),
             microphone: s.microphone.clone(),
             noise_suppression: s.noise_suppression,
@@ -359,6 +360,7 @@ impl Backend {
                 self.downloads.cancel(&id);
                 return Ok(());
             }
+            Command::CompleteOnboarding => next.onboarding_complete = true,
             Command::RequestAccess => return macos::request_access(),
             Command::RequestMicrophone => {
                 return macos::request_microphone();

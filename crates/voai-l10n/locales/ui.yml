@@ -608,3 +608,48 @@ ui.widget.compact:
 ui.widget.standard:
   en: "Standard"
   ru: "Стандартный"
+ui.intro.title:
+  en: "Dictate wherever you type"
+  ru: "Диктуйте прямо у курсора"
+ui.intro.subtitle:
+  en: "Click a text field, hold the shortcut and speak. Release the keys to insert your words."
+  ru: "Поставьте курсор в текстовое поле, зажмите клавиши и говорите. Отпустите — и текст появится у курсора."
+ui.intro.hold:
+  en: "Hold"
+  ru: "Удерживайте"
+ui.intro.sample:
+  en: "Let’s meet at the usual café."
+  ru: "Встретимся в нашем кафе."
+ui.intro.next:
+  en: "Set up permissions"
+  ru: "Настроить доступ"
+ui.intro.permissions:
+  en: "Permissions for dictation"
+  ru: "Разрешения для диктовки"
+ui.intro.privacy:
+  en: "macOS manages these permissions in System Settings → Privacy & Security."
+  ru: "Эти разрешения находятся в Системных настройках macOS, в разделе «Конфиденциальность и безопасность»."
+ui.intro.mic:
+  en: "Records your voice while you dictate. Speech recognition runs on your Mac."
+  ru: "Записывает голос во время диктовки. Voai распознаёт речь на вашем Mac."
+ui.intro.access:
+  en: "Lets Voai insert the finished text at the cursor in other apps."
+  ru: "Позволяет Voai вставлять текст у курсора в других приложениях."
+ui.intro.file_hint:
+  en: "Only transcribing files? You can leave both permissions off."
+  ru: "Если вы расшифровываете только файлы, оба разрешения можно пропустить."
+ui.intro.choose_model:
+  en: "Choose a speech model"
+  ru: "Выбрать речевую модель"
+ui.intro.done:
+  en: "Done"
+  ru: "Готово"
+ui.intro.skip:
+  en: "Skip setup"
+  ru: "Пропустить"
+ui.intro.back:
+  en: "Back"
+  ru: "Назад"
+ui.intro.reopen:
+  en: "Quick start"
+  ru: "Краткое знакомство"

@@ -21,6 +21,8 @@ fn is_default_prompt(prompt: &str) -> bool {
 #[serde(default)]
 pub(super) struct Settings {
     version: u32,
+    #[serde(default = "existing_profile")]
+    pub onboarding_complete: bool,
     pub shortcut: String,
     pub microphone: Option<String>,
     pub noise_suppression: bool,
@@ -40,6 +42,11 @@ pub(super) struct Settings {
     pub server_model: String,
 }
 
+// Profiles saved before the introduction already went through manual setup.
+fn existing_profile() -> bool {
+    true
+}
+
 fn legacy_speech_language() -> String {
     "ru".into()
 }
@@ -48,6 +55,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             version: 2,
+            onboarding_complete: false,
             shortcut: "Alt+Space".into(),
             microphone: None,
             noise_suppression: false,
@@ -223,6 +231,26 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn introduction_is_pending_only_for_unfinished_new_profiles() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = Settings::load(dir.path()).unwrap();
+        assert!(!settings.onboarding_complete);
+        settings.save(dir.path()).unwrap();
+        assert!(!Settings::load(dir.path()).unwrap().onboarding_complete);
+        settings.onboarding_complete = true;
+        settings.save(dir.path()).unwrap();
+        assert!(Settings::load(dir.path()).unwrap().onboarding_complete);
+        for version in [1, 2] {
+            fs::write(
+                dir.path().join("settings.json"),
+                format!(r#"{{"version":{version}}}"#),
+            )
+            .unwrap();
+            assert!(Settings::load(dir.path()).unwrap().onboarding_complete);
+        }
+    }
+
     #[test]
     fn prompt_migrates_persists_and_resets() {
         let dir = tempfile::tempdir().unwrap();

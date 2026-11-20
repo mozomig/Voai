@@ -11,6 +11,7 @@ impl AssetSource for Artwork {
         let data: &'static [u8] = match path {
             "history" => include_bytes!("icons/history.svg"),
             "mic" => include_bytes!("icons/mic.svg"),
+            "cursor" => include_bytes!("icons/cursor.svg"),
             "models" => include_bytes!("icons/models.svg"),
             "sliders" => include_bytes!("icons/sliders.svg"),
             "arrow" => include_bytes!("icons/arrow.svg"),
