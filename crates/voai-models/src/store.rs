@@ -1,4 +1,4 @@
-use crate::{ModelSpec, check_cancelled};
+use crate::{ModelFile, check_cancelled};
 use anyhow::{Context, Result, ensure};
 use ring::digest;
 use std::fs::{self, File, OpenOptions};
@@ -18,11 +18,11 @@ impl ModelStore {
         Self { root }
     }
 
-    fn dir(&self, model: &ModelSpec) -> PathBuf {
+    fn dir(&self, model: &ModelFile) -> PathBuf {
         self.root.join(model.sha256)
     }
 
-    pub fn installed_path(&self, model: &ModelSpec) -> Result<PathBuf> {
+    pub fn installed_path(&self, model: &ModelFile) -> Result<PathBuf> {
         let path = self.dir(model).join(model.filename);
         let metadata = path.symlink_metadata().context("Модель не установлена")?;
         ensure!(
@@ -38,11 +38,11 @@ impl ModelStore {
         Ok(path)
     }
 
-    pub fn installed(&self, model: &ModelSpec) -> bool {
+    pub fn installed(&self, model: &ModelFile) -> bool {
         self.installed_path(model).is_ok()
     }
 
-    pub fn partial_bytes(&self, model: &ModelSpec) -> u64 {
+    pub fn partial_bytes(&self, model: &ModelFile) -> u64 {
         fs::metadata(self.dir(model).join("download.part")).map_or(0, |m| m.len().min(model.bytes))
     }
 
@@ -50,7 +50,7 @@ impl ModelStore {
     /// ignoring Range streams the prefix again while keeping the saved bytes.
     pub fn download(
         &self,
-        model: &ModelSpec,
+        model: &ModelFile,
         cancel: &AtomicBool,
         progress: impl FnMut(u64),
     ) -> Result<PathBuf> {
@@ -66,7 +66,7 @@ impl ModelStore {
 
     fn download_with(
         &self,
-        model: &ModelSpec,
+        model: &ModelFile,
         cancel: &AtomicBool,
         mut progress: impl FnMut(u64),
         agent: &ureq::Agent,
@@ -197,7 +197,7 @@ fn save_receipt(dir: &Path, stamp: &str) -> Result<()> {
     Ok(())
 }
 
-fn verified_stamp(metadata: &fs::Metadata, model: &ModelSpec) -> Result<String> {
+fn verified_stamp(metadata: &fs::Metadata, model: &ModelFile) -> Result<String> {
     Ok(format!(
         "v2 {} {} {} {} {}",
         legacy_stamp(metadata, model)?,
@@ -210,7 +210,7 @@ fn verified_stamp(metadata: &fs::Metadata, model: &ModelSpec) -> Result<String> 
 
 // A cheap startup check ties the SHA-verified artifact to its last modification
 // time. Hashing a gigabyte of weights on the UI thread would stall each launch.
-fn legacy_stamp(metadata: &fs::Metadata, model: &ModelSpec) -> Result<String> {
+fn legacy_stamp(metadata: &fs::Metadata, model: &ModelFile) -> Result<String> {
     let modified = metadata
         .modified()?
         .duration_since(SystemTime::UNIX_EPOCH)?
@@ -264,7 +264,7 @@ fn transfer(
     Ok(())
 }
 
-fn verify(input: &mut impl Read, model: &ModelSpec, cancel: &AtomicBool) -> Result<bool> {
+fn verify(input: &mut impl Read, model: &ModelFile, cancel: &AtomicBool) -> Result<bool> {
     let mut hash = digest::Context::new(&digest::SHA256);
     let mut buf = vec![0; 256 * 1024];
     loop {

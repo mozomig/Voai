@@ -107,7 +107,7 @@ impl Settings {
             .child(row().mt_2().gap_2().child(
                 button("text-models", "Открыть каталог", p).on_click(cx.listener(
                     |this, _, window, cx| {
-                        this.text_models = true;
+                        this.model_tab = ModelTab::Text;
                         this.navigate(Page::Models, window, cx);
                     },
                 )),

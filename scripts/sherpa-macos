@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""Provide authenticated arm64 static libraries for the signed macOS build."""
+import hashlib
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+asset = "sherpa-onnx-v2.0.2-osx-arm64-static-lib"
+sha256 = "3e770a0062e9d0b7c16ca81c15098f08188540906a82a0f213ce3d8ee34b659c"
+target = Path(os.environ.get("CARGO_TARGET_DIR", "target/native")).resolve()
+cache = target / "verified-sherpa" / sha256
+cache.mkdir(parents=True, exist_ok=True)
+filename = asset + ".tar.bz2"
+library = cache / asset / "lib"
+
+if not library.is_dir():
+    with tempfile.TemporaryDirectory(dir=cache) as scratch:
+        staging = Path(scratch)
+        archive = staging / filename
+        cargo_archive = target / "sherpa-onnx-prebuilt" / filename
+        if cargo_archive.is_file():
+            shutil.copyfile(cargo_archive, archive)
+        else:
+            url = f"https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.2/{filename}"
+            subprocess.run(["curl", "--fail", "--silent", "--show-error", "--location",
+                            "--retry", "2", "--output", archive, url], check=True)
+        if hashlib.sha256(archive.read_bytes()).hexdigest() != sha256:
+            sys.exit("Sherpa native archive failed SHA-256 verification")
+        subprocess.run(["tar", "-xjf", archive, "-C", staging], check=True)
+        try:
+            (staging / asset).rename(cache / asset)
+        except OSError:
+            if not library.is_dir():  # Another packager can publish the same archive.
+                raise
+print(library)

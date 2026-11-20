@@ -3,7 +3,7 @@ mod connected;
 mod processing;
 mod store;
 
-pub use catalog::{CATALOG, ModelKind, ModelSpec, find};
+pub use catalog::{CATALOG, ModelFile, ModelKind, ModelSpec, find};
 pub use connected::{ConnectedModel, local_model_size_limit, validate_text_model};
 pub use processing::server::{
     has_server_key, normalize_server_url, process_server, server_models, set_server_key,

@@ -15,6 +15,9 @@ const HELP: &str = "voai                 Открыть настройки и в
 fn run() -> Result<(), String> {
     let mut args = std::env::args_os().skip(1);
     let command = args.next();
+    if command.as_deref() == Some(std::ffi::OsStr::new("--file-worker")) {
+        return voai_speech::file_worker_main();
+    }
     if command.as_deref() == Some(std::ffi::OsStr::new("--speech-worker")) {
         return voai_speech::worker_main();
     }

@@ -10,7 +10,7 @@ app="$stage/Voai.app"
 codesign --verify --strict --deep "$app"
 plutil -lint "$app/Contents/Info.plist"
 version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")"
-for name in voai voai-text-helper; do
+for name in voai voai-text-helper voai-media-helper voai-diarize; do
     lipo "$app/Contents/MacOS/$name" -verify_arch arm64
 done
 [[ "$("$app/Contents/MacOS/voai" --version)" == "Voai $version" ]]

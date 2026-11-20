@@ -164,6 +164,20 @@ fn run_worker(
     }
 }
 
+pub(super) fn decode_params(language: Option<&str>) -> FullParams<'_, 'static> {
+    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_language(language);
+    params.set_n_threads(thread::available_parallelism().map_or(4, |n| n.get().min(6)) as i32);
+    params.set_translate(false);
+    params.set_no_context(true);
+    params.set_suppress_nst(true);
+    params.set_print_special(false);
+    params.set_print_progress(false);
+    params.set_print_realtime(false);
+    params.set_print_timestamps(false);
+    params
+}
+
 fn decode(
     state: &mut whisper_rs::WhisperState,
     samples: &[f32],
@@ -177,16 +191,7 @@ fn decode(
     {
         return Ok(String::new());
     }
-    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-    params.set_language(language);
-    params.set_n_threads(thread::available_parallelism().map_or(4, |n| n.get().min(6)) as i32);
-    params.set_translate(false);
-    params.set_no_context(true);
-    params.set_suppress_nst(true);
-    params.set_print_special(false);
-    params.set_print_progress(false);
-    params.set_print_realtime(false);
-    params.set_print_timestamps(false);
+    let params = decode_params(language);
     // whisper.cpp expects at least one second, including for short utterances.
     let mut padded;
     let samples = if samples.len() < RATE {

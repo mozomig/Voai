@@ -2,9 +2,11 @@
 mod audio;
 mod denoise;
 mod devices;
+mod file;
 mod worker;
 
 pub use devices::input_devices;
+pub use file::file_worker_main;
 use std::{
     path::PathBuf,
     sync::{

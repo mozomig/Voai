@@ -73,6 +73,9 @@ impl Desktop {
         match cx.open_window(options, move |window, cx| {
             let close_engine = engine.clone();
             window.on_window_should_close(cx, move |_, _| {
+                close_engine
+                    .borrow_mut()
+                    .dispatch(Command::File(crate::app::FileCommand::Stop));
                 close_engine.borrow_mut().dispatch(Command::StopPlayback);
                 close_engine
                     .borrow_mut()
@@ -253,6 +256,10 @@ pub fn run(backend: Backend) {
                     .engine
                     .borrow_mut()
                     .dispatch(Command::CaptureShortcut(false));
+                desktop
+                    .engine
+                    .borrow_mut()
+                    .dispatch(Command::File(crate::app::FileCommand::Stop));
                 desktop.engine.borrow_mut().dispatch(Command::StopPlayback);
                 let _ = handle.update(cx, |_, window, _| window.remove_window());
             }

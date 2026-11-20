@@ -1,5 +1,8 @@
 mod connections;
+mod diarization;
 mod downloads;
+mod files;
+pub use files::{ExportFormat, FileCommand, FileDocument, FileProgress, FileView};
 mod history;
 mod hotkeys;
 pub use history::Outcome as HistoryOutcome;
@@ -29,6 +32,7 @@ pub struct Backend {
     settings: Settings,
     session: Session,
     history: history::History,
+    files: files::Files,
     downloads: Downloads,
     connections: Connections,
     shortcuts: Option<Shortcuts>,
@@ -93,7 +97,9 @@ impl Backend {
             server.request(settings.server_url.clone(), &notify);
         }
         let history = history::History::new(dir.join("History"), notify.clone());
+        let files = files::Files::new(&dir, notify.clone());
         let mut backend = Self {
+            files,
             history,
             _instance: lock,
             dir,
@@ -133,6 +139,13 @@ impl Backend {
         let mut models = self.downloads.rows(s);
         models.extend(self.connections.rows(s));
         Snapshot {
+            files: {
+                let mut view = self.files.view.clone();
+                if view.speech_model.is_empty() {
+                    view.speech_model.clone_from(&s.speech);
+                }
+                view
+            },
             history: self.history.view.clone(),
             phase: self.session.phase,
             transcript: self.session.text.clone(),
@@ -188,7 +201,20 @@ impl Backend {
         );
         let mut next = self.settings.clone();
         match command {
+            Command::File(cmd) => {
+                if matches!(cmd, FileCommand::Play(_)) {
+                    self.history.send(history::Request::Stop);
+                }
+                self.files.dispatch(
+                    cmd,
+                    &self.settings,
+                    &self.downloads.store,
+                    !matches!(self.session.phase, Phase::Listening | Phase::Finishing),
+                );
+                return Ok(());
+            }
             Command::PlayEntry(id) => {
+                self.files.stop();
                 if matches!(self.session.phase, Phase::Listening | Phase::Finishing) {
                     return Err("Сначала завершите диктовку.".into());
                 }
@@ -400,6 +426,7 @@ impl Backend {
         }
         self.message.clear();
         self.history.send(history::Request::Stop);
+        self.files.stop();
         let own_window = macos::app_frontmost();
         let target = if own_window && self.test_focus {
             Destination::Test
@@ -480,6 +507,7 @@ impl Backend {
             self.history.send(history::Request::Save(entry));
         }
         self.history.poll();
+        self.files.poll();
         if let Some(keys) = &mut self.shortcuts {
             keys.listen_for_cancel(self.session.phase != Phase::Idle);
         }

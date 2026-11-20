@@ -8,7 +8,8 @@ case "$profile" in
     debug) ;;
     *) echo "Usage: scripts/package-macos [debug|release]" >&2; exit 2;;
 esac
-./scripts/cargo-macos build --workspace --locked ${flags[@]+"${flags[@]}"}
+sherpa_lib_dir="$(./scripts/sherpa-macos)"
+SHERPA_ONNX_LIB_DIR="$sherpa_lib_dir" ./scripts/cargo-macos build --workspace --locked ${flags[@]+"${flags[@]}"}
 build_dir="${CARGO_TARGET_DIR:-$PWD/target/native}/$profile"
 distribution="${VOAI_DIST_DIR:-$PWD/target/dist/$profile}"
 mkdir -p "$distribution"
@@ -20,10 +21,14 @@ cp packaging/Info.plist "$app/Contents/Info.plist"
 cp packaging/Voai.icns "$app/Contents/Resources/Voai.icns"
 cp -R packaging/licenses "$app/Contents/Resources/Licenses"
 cp crates/voai-speech/assets/fastenhancer/LICENSE "$app/Contents/Resources/Licenses/FastEnhancer-LICENSE"
-for binary in voai voai-text-helper; do
-    lipo "$build_dir/$binary" -verify_arch arm64
-    install -m 755 "$build_dir/$binary" "$app/Contents/MacOS/$binary"
-    if otool -L "$build_dir/$binary" | tail -n +2 | awk '{print $1}' | grep -Ev '^(/usr/lib/|/System/Library/)' >&2; then
+xcrun swiftc -O -parse-as-library -target arm64-apple-macosx14.0 \
+    native/MediaHelper.swift -o "$stage/voai-media-helper"
+for binary in voai voai-text-helper voai-diarize voai-media-helper; do
+    source="$build_dir/$binary"
+    if [[ "$binary" == voai-media-helper ]]; then source="$stage/$binary"; fi
+    lipo "$source" -verify_arch arm64
+    install -m 755 "$source" "$app/Contents/MacOS/$binary"
+    if otool -L "$source" | tail -n +2 | awk '{print $1}' | grep -Ev '^(/usr/lib/|/System/Library/)' >&2; then
         echo "$binary links to a non-system library; package it before shipping." >&2; exit 1
     fi
 done
@@ -41,7 +46,9 @@ if [[ "$identity" == "-" ]]; then
 fi
 sign=(--force --sign "$identity" --options runtime)
 if [[ "$identity" != "-" ]]; then sign+=(--timestamp); fi
-codesign "${sign[@]}" "$app/Contents/MacOS/voai-text-helper"
+for helper in voai-text-helper voai-media-helper voai-diarize; do
+    codesign "${sign[@]}" "$app/Contents/MacOS/$helper"
+done
 codesign "${sign[@]}" --entitlements packaging/entitlements.plist "$app"
 codesign --verify --deep --strict "$app"
 if [[ -n "${VOAI_NOTARY_PROFILE:-}" ]]; then

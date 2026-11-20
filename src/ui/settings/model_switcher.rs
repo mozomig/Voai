@@ -9,6 +9,9 @@ impl Settings {
             .pt(px(10.))
             .border_t_1()
             .border_color(p.rule)
+            .when(self.page == Page::Files, |d| {
+                d.child(text("Для диктовки", 10., p.muted).mb_1().pl_1())
+            })
             .child(
                 col()
                     .w_full()
@@ -186,7 +189,11 @@ impl Settings {
         menu = menu.item(
             PopupMenuItem::new("Открыть каталог").on_click(move |_, window, cx| {
                 let _ = catalog.update(cx, |view, cx| {
-                    view.text_models = processing;
+                    view.model_tab = if processing {
+                        ModelTab::Text
+                    } else {
+                        ModelTab::Speech
+                    };
                     view.file_dialog_error = None;
                     view.navigate(Page::Models, window, cx);
                 });

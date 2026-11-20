@@ -46,6 +46,7 @@ pub struct ModelRow {
 
 #[derive(Clone, PartialEq)]
 pub struct Snapshot {
+    pub files: super::files::FileView,
     pub history: super::history::HistoryView,
     pub phase: Phase,
     pub transcript: String,
@@ -76,6 +77,7 @@ pub struct Snapshot {
 }
 
 pub enum Command {
+    File(super::files::FileCommand),
     PlayEntry(i64),
     StopPlayback,
     DeleteEntry(i64),

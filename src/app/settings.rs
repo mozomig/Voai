@@ -140,6 +140,14 @@ impl Settings {
             ModelKind::Speech => &self.speech,
             ModelKind::Text => &self.text,
         };
+        self.path_for(store, id, kind)
+    }
+    pub fn path_for(
+        &self,
+        store: &ModelStore,
+        id: &str,
+        kind: ModelKind,
+    ) -> Result<PathBuf, String> {
         let (actual, path) = self.resolve_model(store, id)?;
         if actual != kind {
             return Err("Выберите модель подходящего типа в настройках".into());

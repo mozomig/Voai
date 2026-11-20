@@ -15,17 +15,16 @@ use std::{
     path::Path,
 };
 
-fn edit(path: &Path, instruction: String, transcript: String) -> Result<String> {
+fn edit(
+    backend: &LlamaBackend,
+    model: &LlamaModel,
+    instruction: &str,
+    transcript: String,
+) -> Result<String> {
     const CONTEXT: u32 = 4096;
     const BATCH: usize = 256;
-    let backend = LlamaBackend::init()?;
-    let model = LlamaModel::load_from_file(
-        &backend,
-        path,
-        &LlamaModelParams::default().with_n_gpu_layers(u32::MAX),
-    )?;
     let messages = [
-        LlamaChatMessage::new("system".into(), instruction)?,
+        LlamaChatMessage::new("system".into(), instruction.to_owned())?,
         LlamaChatMessage::new("user".into(), transcript)?,
     ];
     let prompt = model.apply_chat_template(&model.chat_template(None)?, &messages, true)?;
@@ -40,7 +39,7 @@ fn edit(path: &Path, instruction: String, transcript: String) -> Result<String> 
         "Фраза превышает контекст модели"
     );
     let mut ctx = model.new_context(
-        &backend,
+        backend,
         LlamaContextParams::default()
             .with_n_ctx(NonZeroU32::new(CONTEXT))
             .with_n_batch(BATCH as u32),
@@ -119,15 +118,46 @@ fn main() -> Result<()> {
         return validate_model(Path::new(&path));
     }
     ensure!(
-        operation == "--edit-v2",
+        operation == "--edit-v2" || operation == "--edit-lines-v1",
         "Неподдерживаемая версия протокола"
     );
     let mut stdin = io::stdin().lock();
     let instruction = read_message(&mut stdin, 8192)?;
+    let load = || -> Result<(LlamaBackend, LlamaModel)> {
+        let backend = LlamaBackend::init()?;
+        let model = LlamaModel::load_from_file(
+            &backend,
+            Path::new(&path),
+            &LlamaModelParams::default().with_n_gpu_layers(u32::MAX),
+        )?;
+        Ok((backend, model))
+    };
+    if operation == "--edit-lines-v1" {
+        // The parent supplies an anonymous, private file as stdin. Load the GGUF
+        // once and start each turn with a fresh context and its original speaker.
+        let mut size = [0; 4];
+        stdin.read_exact(&mut size)?;
+        let count = u32::from_be_bytes(size);
+        let (backend, model) = load()?;
+        let mut out = io::BufWriter::new(io::stdout().lock());
+        for index in 0..count {
+            let input = read_message(&mut stdin, 120_000)?;
+            let text = edit(&backend, &model, &instruction, input)?;
+            ensure!(!text.trim().is_empty(), "Пустой результат обработки");
+            serde_json::to_writer(
+                &mut out,
+                &serde_json::json!({"edited":{"index":index,"text":text.trim()}}),
+            )?;
+            writeln!(out)?;
+            out.flush()?;
+        }
+        return Ok(());
+    }
     let transcript = read_message(&mut stdin, 120_000)?;
     drop(stdin);
     watch_parent();
-    let text = edit(Path::new(&path), instruction, transcript)?;
+    let (backend, model) = load()?;
+    let text = edit(&backend, &model, &instruction, transcript)?;
     ensure!(!text.trim().is_empty(), "Пустой результат обработки");
     io::stdout().lock().write_all(text.trim().as_bytes())?;
     Ok(())

@@ -1,21 +1,14 @@
 use super::*;
+use crate::app::FileCommand;
 
 type ModelCommand = fn(String) -> Command;
 
 impl Settings {
     pub(super) fn models(&self, p: Palette, cx: &mut Context<Self>) -> Div {
         let s = &self.snapshot;
-        let local = s
-            .models
-            .iter()
-            .filter(|m| m.text_model == self.text_models && m.local_path.is_some());
-        let occupied = s
-            .models
-            .iter()
-            .filter(|m| m.local_path.is_none())
-            .map(|m| m.on_disk)
-            .sum();
-        col()
+        let speakers = self.model_tab == ModelTab::Speakers;
+        let tabs = [ModelTab::Speech, ModelTab::Text, ModelTab::Speakers];
+        let mut page = col()
             .child(
                 row()
                     .flex_wrap()
@@ -23,9 +16,13 @@ impl Settings {
                     .gap_2()
                     .child(self.tabs(
                         p,
-                        &[("Речь", !self.text_models), ("Текст", self.text_models)],
-                        |this, i, cx| {
-                            this.text_models = i == 1;
+                        &[
+                            ("Речь", self.model_tab == ModelTab::Speech),
+                            ("Текст", self.model_tab == ModelTab::Text),
+                            ("Спикеры", speakers),
+                        ],
+                        move |this, i, cx| {
+                            this.model_tab = tabs[i];
                             this.file_dialog_error = None;
                             cx.notify();
                         },
@@ -34,60 +31,82 @@ impl Settings {
                     .child(
                         primary_button(
                             "attach-model",
-                            if s.connecting_model {
+                            if speakers {
+                                "Подключить папку…"
+                            } else if s.connecting_model {
                                 "Проверяю файл…"
                             } else {
                                 "Подключить файл…"
                             },
                             p,
                         )
-                        .disabled(s.connecting_model)
+                        .disabled(if speakers {
+                            s.files.progress.is_some()
+                        } else {
+                            s.connecting_model
+                        })
                         .on_click(cx.listener(|this, _, _, cx| this.choose_file(cx))),
                     ),
             )
             .children(
                 self.file_dialog_error
                     .as_ref()
-                    .map(|message| text(message.clone(), 12., p.ink).mt_2()),
+                    .map(|message| text(message.clone(), 12., p.error).mt_2()),
+            );
+        if speakers {
+            page = page.child(self.voice_models(p, cx));
+            return page;
+        }
+        let text_models = self.model_tab == ModelTab::Text;
+        let local = s
+            .models
+            .iter()
+            .filter(|m| m.text_model == text_models && m.local_path.is_some());
+        let occupied = s
+            .models
+            .iter()
+            .filter(|m| m.local_path.is_none())
+            .map(|m| m.on_disk)
+            .sum();
+        page.when(local.clone().next().is_some(), |d| {
+            d.child(group_title("Подключённые файлы", p))
+                .children(local.map(|m| self.model_row(m, p, cx)))
+        })
+        .child(group_title("Каталог", p))
+        .children(
+            s.models
+                .iter()
+                .filter(|m| m.text_model == text_models && m.local_path.is_none())
+                .map(|m| self.model_row(m, p, cx)),
+        )
+        .when(occupied > 0, |d| {
+            d.child(
+                row()
+                    .mt_4()
+                    .gap_2()
+                    .child(icon("disk", p.muted, 14.))
+                    .child(text(
+                        format!("На диске · {}", bytes(occupied)),
+                        12.,
+                        p.muted,
+                    )),
             )
-            .when(local.clone().next().is_some(), |d| {
-                d.child(group_title("Подключённые файлы", p))
-                    .children(local.map(|m| self.model_row(m, p, cx)))
-            })
-            .child(group_title("Каталог", p))
-            .children(
-                s.models
-                    .iter()
-                    .filter(|m| m.text_model == self.text_models && m.local_path.is_none())
-                    .map(|m| self.model_row(m, p, cx)),
-            )
-            .when(occupied > 0, |d| {
-                d.child(
-                    row()
-                        .mt_4()
-                        .gap_2()
-                        .child(icon("disk", p.muted, 14.))
-                        .child(text(
-                            format!("На диске · {}", bytes(occupied)),
-                            12.,
-                            p.muted,
-                        )),
-                )
-            })
+        })
     }
 
     fn choose_file(&mut self, cx: &mut Context<Self>) {
-        let text_model = self.text_models;
+        let tab = self.model_tab;
+        let speakers = tab == ModelTab::Speakers;
         self.file_dialog_error = None;
         let picker = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
-            directories: false,
+            files: !speakers,
+            directories: speakers,
             multiple: false,
             prompt: Some(
-                if text_model {
-                    "Выбрать файл GGUF"
-                } else {
-                    "Выбрать файл Whisper"
+                match tab {
+                    ModelTab::Speech => "Выбрать файл Whisper",
+                    ModelTab::Text => "Выбрать файл GGUF",
+                    ModelTab::Speakers => "Подключить папку",
                 }
                 .into(),
             ),
@@ -98,7 +117,14 @@ impl Settings {
                 match selected {
                     Ok(Ok(Some(files))) => {
                         if let Some(path) = files.into_iter().next() {
-                            view.send(Command::ConnectModel { path, text_model });
+                            view.send(if speakers {
+                                Command::File(FileCommand::ConnectVoices(path))
+                            } else {
+                                Command::ConnectModel {
+                                    path,
+                                    text_model: tab == ModelTab::Text,
+                                }
+                            });
                         }
                     }
                     Ok(Ok(None)) => {}
@@ -111,6 +137,58 @@ impl Settings {
             });
         })
         .detach();
+    }
+
+    fn voice_models(&self, p: Palette, cx: &Context<Self>) -> Div {
+        let files = &self.snapshot.files;
+        let busy = files.progress.is_some();
+        let selected = files.voices_downloaded && !files.using_local_voices && files.voices_ready;
+        let action = if selected {
+            "Выбрано"
+        } else if files.voices_downloaded {
+            "Выбрать"
+        } else {
+            "Скачать"
+        };
+        let download = button("download-speakers", action, p)
+            .disabled(selected || busy)
+            .on_click(cx.listener(|this, _, _, _| {
+                let choice = if this.snapshot.files.voices_downloaded {
+                    FileCommand::UseDownloadedVoices
+                } else {
+                    FileCommand::InstallVoices
+                };
+                this.send(Command::File(choice));
+            }));
+        let mut panel = col().gap_1()
+            .child(group_title("Определение спикеров", p))
+            .child(Self::setting(p, "Pyannote 3.0 + CAM++", "31,1 МБ · Разделяет реплики по голосам", download))
+            .child(text("Свой комплект sherpa-onnx можно подключить из папки с файлами segmentation.onnx и embedding.onnx.", 12., p.muted).mt_2());
+        if let Some(path) = &files.voices_local {
+            let active = files.using_local_voices && files.voices_ready;
+            panel = panel.child(Self::setting(
+                p,
+                "Подключённая папка",
+                &path.to_string_lossy(),
+                button(
+                    "use-local-speakers",
+                    if active {
+                        "Выбрано"
+                    } else {
+                        "Выбрать"
+                    },
+                    p,
+                )
+                .disabled(busy || active)
+                .on_click(cx.listener(|this, _, _, _| {
+                    this.send(Command::File(FileCommand::UseLocalVoices))
+                })),
+            ));
+        }
+        if let Some(progress) = &files.progress {
+            panel = panel.child(self.file_progress(progress, p, cx));
+        }
+        panel.children(files.error.as_ref().map(|e| text(e.clone(), 12., p.error)))
     }
 
     fn model_row(&self, m: &ModelRow, p: Palette, cx: &Context<Self>) -> Div {

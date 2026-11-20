@@ -1,4 +1,5 @@
 mod dictation;
+mod files;
 mod history;
 mod model_switcher;
 mod models;
@@ -21,6 +22,7 @@ pub(super) enum Page {
     Models,
     Processing,
     History,
+    Files,
 }
 
 impl Page {
@@ -30,6 +32,7 @@ impl Page {
             Self::Models => "Модели",
             Self::Processing => "Обработка",
             Self::History => "История",
+            Self::Files => "Файлы",
         }
     }
     fn icon(self) -> &'static str {
@@ -38,6 +41,7 @@ impl Page {
             Self::Models => "models",
             Self::Processing => "sliders",
             Self::History => "history",
+            Self::Files => "file",
         }
     }
 }
@@ -51,13 +55,21 @@ pub(super) fn mode_title(mode: Mode) -> &'static str {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ModelTab {
+    Speech,
+    Text,
+    Speakers,
+}
+
 pub(super) struct Settings {
     engine: Engine,
     snapshot: Snapshot,
     page: Page,
+    files_ui: files::FileControls,
     expanded_entry: Option<i64>,
     confirm_delete: Option<i64>,
-    text_models: bool,
+    model_tab: ModelTab,
     capture: bool,
     right_command_pending: bool,
     focus: FocusHandle,
@@ -124,6 +136,7 @@ impl Settings {
             },
         )
         .detach();
+        let files_ui = files::FileControls::new(window, cx);
         let focus = cx.focus_handle();
         cx.on_blur(&focus, window, |this, _, cx| this.end_capture(cx))
             .detach();
@@ -139,9 +152,10 @@ impl Settings {
             last_test: snapshot.test_result.as_ref().map(|(id, _)| *id),
             snapshot,
             page: Page::Dictation,
+            files_ui,
             expanded_entry: None,
             confirm_delete: None,
-            text_models: false,
+            model_tab: ModelTab::Speech,
             capture: false,
             right_command_pending: false,
             focus,
@@ -233,6 +247,7 @@ impl Settings {
         {
             self.expanded_entry = snapshot.history.entries.first().map(|e| e.id);
         }
+        self.files_ui.sync(&self.snapshot.files, &snapshot.files);
         self.snapshot = snapshot;
         cx.notify();
     }
@@ -244,7 +259,7 @@ impl Settings {
         cx: &mut Context<Self>,
     ) {
         if models {
-            self.text_models = false;
+            self.model_tab = ModelTab::Speech;
             self.file_dialog_error = None;
             self.navigate(Page::Models, window, cx);
         } else {
@@ -254,6 +269,10 @@ impl Settings {
 
     pub(super) fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         if self.page != page {
+            if self.page == Page::Files {
+                self.send(Command::File(crate::app::FileCommand::Stop));
+                self.files_ui.leave();
+            }
             if self.page == Page::History {
                 self.send(Command::StopPlayback);
             }
@@ -310,6 +329,13 @@ impl Settings {
     fn hotkey_input(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if !self.capture {
             let key = &event.keystroke;
+            if self.page == Page::Files && key.key == "escape" && self.files_ui.cancel_edit() {
+                window.prevent_default();
+                cx.stop_propagation();
+                window.focus(&self.focus);
+                cx.notify();
+                return;
+            }
             if self.page == Page::Processing
                 && key.modifiers == Modifiers::command()
                 && key.key == "s"
@@ -368,6 +394,7 @@ impl Settings {
                     Page::Models,
                     Page::Processing,
                     Page::History,
+                    Page::Files,
                 ]
                 .map(|page| {
                     let selected = page == self.page;
@@ -518,6 +545,7 @@ impl Render for Settings {
             Page::Models => self.models(p, cx),
             Page::Processing => self.processing(p, cx),
             Page::History => self.history(p, cx),
+            Page::Files => self.files(p, cx),
         };
         div()
             .size_full()
@@ -553,13 +581,21 @@ impl Render for Settings {
                             .flex_1()
                             .min_w_0()
                             .h_full()
-                            .overflow_y_scroll()
+                            .when(self.page != Page::Files, |view| view.overflow_y_scroll())
                             .px(px(28.))
                             .py(px(20.))
                             .child(
-                                text(self.page.title(), 24., p.ink)
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .mb(px(16.)),
+                                text(
+                                    if self.page == Page::Files {
+                                        "Расшифровка файла"
+                                    } else {
+                                        self.page.title()
+                                    },
+                                    24.,
+                                    p.ink,
+                                )
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .mb(px(16.)),
                             )
                             .when(
                                 !self.snapshot.message.is_empty()
