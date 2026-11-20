@@ -1,0 +1,247 @@
+//! Bounded overlapping PCM windows, shared word stitching and file progress.
+use crate::RATE;
+use serde::Serialize;
+use std::{
+    fs::File,
+    io::{self, BufWriter, Read, Seek, SeekFrom, Write},
+    path::Path,
+};
+use voai_l10n::tr;
+
+const STRIDE: u64 = 24 * RATE as u64;
+const CONTEXT: u64 = 3 * RATE as u64;
+
+#[derive(Debug, Serialize)]
+pub struct Word {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+}
+
+impl Word {
+    fn middle(&self) -> u64 {
+        self.start_ms.midpoint(self.end_ms)
+    }
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum Update<'a> {
+    Progress { progress: u64 },
+    Words { words: &'a [Word] },
+}
+
+fn report(writer: &mut impl Write, update: Update<'_>) -> io::Result<()> {
+    serde_json::to_writer(&mut *writer, &update)?;
+    writer.write_all(b"\n")?;
+    writer.flush()
+}
+
+pub fn run<D>(load: impl FnOnce(&Path, Option<String>) -> Result<D, String>) -> Result<(), String>
+where
+    D: FnMut(&[i16], u64) -> Result<Vec<Word>, String>,
+{
+    let mut args = std::env::args_os().skip(2);
+    let model = args.next().ok_or(tr("file.whisper.missing"))?;
+    let language = args
+        .next()
+        .and_then(|s| s.into_string().ok())
+        .ok_or(tr("file.language.missing"))?;
+    let path = args.next().ok_or(tr("file.audio.missing"))?;
+    if args.next().is_some()
+        || language.is_empty()
+        || language.len() > 12
+        || !language
+            .bytes()
+            .all(|c| c.is_ascii_alphabetic() || c == b'-')
+    {
+        return Err(tr("file.args").into());
+    }
+    let mut input = File::open(path).map_err(|_| tr("file.track.unavailable"))?;
+    let len = input.metadata().map_err(|_| tr("file.track.length"))?.len();
+    if len == 0 || len % 2 != 0 {
+        return Err(tr("file.track.damaged").into());
+    }
+    let mut recognize = load(Path::new(&model), (language != "auto").then_some(language))?;
+    let mut writer = BufWriter::new(io::stdout().lock());
+    windows(
+        len / 2,
+        |left, right| {
+            input
+                .seek(SeekFrom::Start(left * 2))
+                .map_err(|_| tr("file.audio.seek"))?;
+            let mut samples = vec![0i16; (right - left) as usize];
+            input
+                .read_exact(bytemuck::cast_slice_mut(&mut samples))
+                .map_err(|_| tr("file.audio.read"))?;
+            recognize(&samples, left)
+        },
+        |words, progress| {
+            if !words.is_empty() {
+                report(&mut writer, Update::Words { words })
+                    .map_err(|_| tr("file.transcription.interrupted"))?;
+            }
+            report(&mut writer, Update::Progress { progress })
+                .map_err(|_| tr("file.transcription.interrupted").to_owned())
+        },
+    )
+}
+
+pub fn windows(
+    total: u64,
+    mut decode: impl FnMut(u64, u64) -> Result<Vec<Word>, String>,
+    mut emit: impl FnMut(&[Word], u64) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut pending = Vec::new();
+    let mut last_end = 0;
+    for center in (0..total).step_by(STRIDE as usize) {
+        let left = center.saturating_sub(CONTEXT);
+        let right = (center + STRIDE + CONTEXT).min(total);
+        let words = decode(left, right)?;
+        let mut words = stitch(pending, words, millis(center));
+        let finished = right == total;
+        let keep = if finished {
+            words.len()
+        } else {
+            let next_left = millis(center + STRIDE - CONTEXT);
+            words.partition_point(|w| w.middle() < next_left)
+        };
+        pending = words.split_off(keep);
+        // Timestamp estimates on opposite sides of a seam can overlap slightly.
+        for word in &mut words {
+            word.start_ms = word
+                .start_ms
+                .max(last_end)
+                .min(millis(total).saturating_sub(1));
+            word.end_ms = word.end_ms.max(word.start_ms + 1).min(millis(total));
+            last_end = word.end_ms;
+        }
+        let progress = if finished {
+            100
+        } else {
+            (center + STRIDE) * 100 / total
+        };
+        emit(&words, progress)?;
+        if finished {
+            break;
+        }
+    }
+    Ok(())
+}
+
+pub fn millis(sample: u64) -> u64 {
+    sample / (RATE as u64 / 1000)
+}
+
+fn normalized(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// Find a common word in the overlap, preferring nearby multiword matches.
+/// One side supplies every word up to the anchor, the other supplies the rest.
+/// If the two decodes disagree completely, use the shared time boundary.
+fn stitch(mut previous: Vec<Word>, mut current: Vec<Word>, boundary: u64) -> Vec<Word> {
+    if previous.is_empty() {
+        return current;
+    }
+    if current.is_empty() {
+        return previous;
+    }
+    let overlap_end = boundary + millis(CONTEXT);
+    let head = current.partition_point(|w| w.middle() <= overlap_end);
+    let left: Vec<_> = previous.iter().map(|w| normalized(&w.text)).collect();
+    let right: Vec<_> = current[..head]
+        .iter()
+        .map(|w| normalized(&w.text))
+        .collect();
+    let mut best = None;
+    for (i, word) in left.iter().enumerate() {
+        for (j, other) in right.iter().enumerate() {
+            let drift = previous[i].middle().abs_diff(current[j].middle());
+            if word.is_empty() || word != other || drift > 1_500 {
+                continue;
+            }
+            let score = left[..i]
+                .iter()
+                .rev()
+                .zip(right[..j].iter().rev())
+                .take(3)
+                .take_while(|(a, b)| a == b)
+                .count()
+                + left[i + 1..]
+                    .iter()
+                    .zip(&right[j + 1..])
+                    .take(3)
+                    .take_while(|(a, b)| a == b)
+                    .count();
+            let proximity = previous[i].middle().abs_diff(boundary) + drift;
+            let rank = (score, std::cmp::Reverse(proximity));
+            if best.as_ref().is_none_or(|(old, _, _)| rank > *old) {
+                best = Some((rank, i + 1, j + 1));
+            }
+        }
+    }
+    let (end, start) = best.map(|(_, i, j)| (i, j)).unwrap_or_else(|| {
+        (
+            previous.partition_point(|w| w.middle() < boundary),
+            current.partition_point(|w| w.middle() < boundary),
+        )
+    });
+    previous.truncate(end);
+    previous.extend(current.drain(start..));
+    previous
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn words(input: &[(u64, &str)]) -> Vec<Word> {
+        input
+            .iter()
+            .map(|&(at, text)| Word {
+                start_ms: at,
+                end_ms: at + 80,
+                text: text.into(),
+            })
+            .collect()
+    }
+    #[test]
+    fn overlap_joins_once_with_jitter_punctuation_and_a_real_repetition() {
+        let a = words(&[
+            (54000, "Да,"),
+            (54600, "да,"),
+            (55200, "давайте"),
+            (56100, "встретимся"),
+        ]);
+        let b = words(&[
+            (54200, "да,"),
+            (54800, "да,"),
+            (55900, "давайте"),
+            (56500, "встретимся."),
+            (57100, "Завтра."),
+        ]);
+        let merged = stitch(a, b, 56000);
+        assert_eq!(
+            merged
+                .iter()
+                .map(|w| normalized(&w.text))
+                .collect::<Vec<_>>(),
+            ["да", "да", "давайте", "встретимся", "завтра"]
+        );
+    }
+    #[test]
+    fn divergent_overlap_has_one_owner_per_side_of_cut() {
+        let result = stitch(
+            words(&[(100, "слева"), (1100, "черновик")]),
+            words(&[(100, "лишнее"), (1200, "справа")]),
+            1000,
+        );
+        assert_eq!(
+            result.iter().map(|w| w.text.as_str()).collect::<Vec<_>>(),
+            ["слева", "справа"]
+        );
+    }
+}

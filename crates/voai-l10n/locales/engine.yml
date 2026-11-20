@@ -45,8 +45,8 @@ _version: 2
   en: "Recognition stopped."
   ru: "Распознавание остановлено"
 "speech.reply.large":
-  en: "Whisper’s response was too large."
-  ru: "Слишком длинный ответ Whisper"
+  en: "The speech model’s response was too large."
+  ru: "Слишком длинный ответ речевой модели"
 "speech.reply.invalid":
   en: "Unrecognized response from the speech worker."
   ru: "Неизвестный ответ речевого процесса"
@@ -54,14 +54,14 @@ _version: 2
   en: "Lost connection to the speech worker (%{e})."
   ru: "Связь с речевым процессом прервана: %{e}"
 "speech.check.start":
-  en: "Couldn’t start the Whisper model check (%{e})."
-  ru: "Не удалось запустить проверку модели Whisper: %{e}"
+  en: "Couldn’t start the speech model check (%{e})."
+  ru: "Не удалось запустить проверку речевой модели: %{e}"
 "speech.check.load":
-  en: "Whisper couldn’t load this model."
-  ru: "Движок Whisper не смог загрузить выбранную модель"
+  en: "Couldn’t load this speech model."
+  ru: "Не удалось открыть речевую модель"
 "speech.check.timeout":
-  en: "The Whisper model check timed out."
-  ru: "Истекло время проверки модели Whisper"
+  en: "The speech model check timed out."
+  ru: "Истекло время проверки речевой модели"
 "speech.path.missing":
   en: "Specify a model file."
   ru: "Не задан путь к модели"
@@ -129,8 +129,8 @@ _version: 2
   en: "Couldn’t open the audio stream (%{e})."
   ru: "Не удалось открыть поток микрофона: %{e}"
 "file.whisper.missing":
-  en: "Choose a Whisper model."
-  ru: "Не указана модель Whisper."
+  en: "Choose a speech model."
+  ru: "Выберите речевую модель."
 "file.language.missing":
   en: "Specify the speech language."
   ru: "Не указан язык речи."
@@ -210,8 +210,8 @@ _version: 2
   en: "Choose a llama.cpp GGUF file for text processing."
   ru: "Для обработки текста выберите файл llama.cpp GGUF"
 "model.ggml.expected":
-  en: "Choose a whisper.cpp GGML file for speech recognition."
-  ru: "Для распознавания выберите модель whisper.cpp в формате GGML"
+  en: "Choose a Whisper GGML file or a GigaAM or Parakeet speech GGUF."
+  ru: "Выберите GGML для Whisper или речевой GGUF для GigaAM и Parakeet"
 "model.whisper.params":
   en: "Invalid whisper.cpp parameters."
   ru: "Некорректные параметры whisper.cpp"
@@ -458,3 +458,31 @@ _version: 2
 "server.no.model":
   en: "Choose a local server model."
   ru: "Выберите модель локального сервера"
+
+"catalog.gigaam-v3":
+  en: "Russian speech with punctuation · Q8"
+  ru: "Русская речь с пунктуацией · Q8"
+"catalog.parakeet-v3":
+  en: "25 European languages, including English and Russian · Q8"
+  ru: "25 европейских языков, в том числе русский и английский · Q8"
+"catalog.gemma4-e4b":
+  en: "Multilingual text editing · Google QAT 4-bit"
+  ru: "Многоязычная редактура · 4-битная версия Google"
+"catalog.qwen3-4b":
+  en: "Multilingual editing without a reasoning step · Q4_K_M"
+  ru: "Многоязычная редактура без режима рассуждений · Q4_K_M"
+"speech.gguf.unsupported":
+  en: "Choose a GigaAM or Parakeet speech GGUF with word timestamps."
+  ru: "Выберите речевой GGUF для GigaAM или Parakeet с таймкодами слов."
+"speech.gguf.language":
+  en: "This model doesn’t support the selected spoken language."
+  ru: "Эта модель не поддерживает выбранный язык речи."
+"speech.gguf.decode":
+  en: "The speech model couldn’t transcribe this audio."
+  ru: "Модель не смогла распознать этот фрагмент."
+"speech.gguf.timestamps":
+  en: "The speech model returned text without word timestamps."
+  ru: "Модель вернула текст без таймкодов слов."
+"model.gguf.kind":
+  en: "Choose a GGUF that matches the selected model type."
+  ru: "Выберите GGUF, подходящий для этого типа модели."

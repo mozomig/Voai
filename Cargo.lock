@@ -7083,6 +7083,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "transcribe-cpp"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cf6687b4c73890aea4515632afb1586d48998f22f38e02e3cfbcd7d1543cd4a"
+dependencies = [
+ "log",
+ "thiserror 2.0.21",
+ "transcribe-cpp-sys",
+]
+
+[[package]]
+name = "transcribe-cpp-sys"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32f94fb1e9a3033101bbd500d02993cfc95e315f24417038fd42f1fd80e1059a"
+dependencies = [
+ "cmake",
+ "serde_json",
+]
+
+[[package]]
 name = "transpose"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7502,7 +7523,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voai"
-version = "1.6.0"
+version = "1.7.0"
 dependencies = [
  "async-channel 2.5.0",
  "block2",
@@ -7538,8 +7559,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "voai-asr-helper"
+version = "1.7.0"
+dependencies = [
+ "transcribe-cpp",
+ "voai-asr-worker",
+ "voai-l10n",
+]
+
+[[package]]
+name = "voai-asr-worker"
+version = "1.7.0"
+dependencies = [
+ "bytemuck",
+ "serde",
+ "serde_json",
+ "voai-l10n",
+]
+
+[[package]]
 name = "voai-diarize"
-version = "1.6.0"
+version = "1.7.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -7548,7 +7588,7 @@ dependencies = [
 
 [[package]]
 name = "voai-l10n"
-version = "1.6.0"
+version = "1.7.0"
 dependencies = [
  "rust-i18n",
  "serde",
@@ -7558,7 +7598,7 @@ dependencies = [
 
 [[package]]
 name = "voai-models"
-version = "1.6.0"
+version = "1.7.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -7575,7 +7615,7 @@ dependencies = [
 
 [[package]]
 name = "voai-speech"
-version = "1.6.0"
+version = "1.7.0"
 dependencies = [
  "bytemuck",
  "cpal",
@@ -7584,15 +7624,14 @@ dependencies = [
  "ort",
  "rtrb",
  "rubato",
- "serde",
- "serde_json",
+ "voai-asr-worker",
  "voai-l10n",
  "whisper-rs",
 ]
 
 [[package]]
 name = "voai-text-helper"
-version = "1.6.0"
+version = "1.7.0"
 dependencies = [
  "anyhow",
  "llama-cpp-2",

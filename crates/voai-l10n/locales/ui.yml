@@ -309,8 +309,8 @@ ui.model.download_progress:
   en: "%{received} of %{total} · %{percent}%"
   ru: "%{received} из %{total} · %{percent}%"
 ui.model.first_download:
-  en: "Download a model or select a Whisper file."
-  ru: "Скачайте модель или подключите свой файл Whisper."
+  en: "Download a model or select a speech model file."
+  ru: "Скачайте модель или подключите свой файл модели."
 ui.model.folder_name:
   en: "Folder · %{name}"
   ru: "Папка · %{name}"
@@ -344,9 +344,9 @@ ui.model.selected:
 ui.model.unavailable:
   en: "Model unavailable"
   ru: "Модель недоступна"
-ui.model.whisper_file:
-  en: "Choose a Whisper file"
-  ru: "Выбрать файл Whisper"
+ui.model.speech_file:
+  en: "Choose a speech model file"
+  ru: "Выбрать речевую модель"
 ui.models.diarization:
   en: "Speaker identification"
   ru: "Определение спикеров"

@@ -138,7 +138,10 @@ fn check_container(file: &File, kind: ModelKind, bytes: u64) -> Result<()> {
                 magic == u32::from_le_bytes(*b"GGUF"),
                 tr("model.gguf.expected")
             );
-            gguf::check(&mut r, bytes)?;
+            gguf::check(&mut r, bytes, kind)?;
+        }
+        ModelKind::Speech if magic == u32::from_le_bytes(*b"GGUF") => {
+            gguf::check(&mut r, bytes, kind)?
         }
         ModelKind::Speech => {
             ensure!(
@@ -284,6 +287,29 @@ mod tests {
         malformed[8..16].copy_from_slice(&u64::MAX.to_le_bytes());
         fs::write(&path, malformed).unwrap();
         assert!(ConnectedModel::connect(&path, ModelKind::Text, 1024, unexpected).is_err());
+    }
+
+    #[test]
+    fn speech_gguf_is_classified_by_architecture_even_without_an_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("weights");
+        for arch in ["parakeet", "gigaam"] {
+            let mut bytes = gguf();
+            bytes.truncate(24);
+            let key = b"general.architecture";
+            bytes.extend((key.len() as u64).to_le_bytes());
+            bytes.extend(key);
+            bytes.extend(8u32.to_le_bytes());
+            bytes.extend((arch.len() as u64).to_le_bytes());
+            bytes.extend(arch.bytes());
+            bytes.resize(160, 0);
+            fs::write(&path, bytes).unwrap();
+            assert!(ConnectedModel::connect(&path, ModelKind::Speech, 1024, |_| Ok(())).is_ok());
+            assert!(
+                ConnectedModel::connect(&path, ModelKind::Text, 1024, |_| panic!("wrong engine"))
+                    .is_err()
+            );
+        }
     }
 
     #[test]

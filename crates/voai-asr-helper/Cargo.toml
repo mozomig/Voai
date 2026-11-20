@@ -1,0 +1,10 @@
+[package]
+name = "voai-asr-helper"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+voai-l10n = { path = "../voai-l10n" }
+transcribe-cpp = "=0.4.2"
+voai-asr-worker = { path = "../voai-asr-worker" }

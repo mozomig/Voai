@@ -12,7 +12,7 @@ Hold **⌥ Space** and speak. Release the keys and Voai types the words at your 
 
 ## Where your speech goes
 
-Whisper transcribes on your Mac using Metal. Download a model in Voai or point it at one you already have. Once the models are on disk, dictation and file transcription work offline.
+Whisper, Parakeet and GigaAM transcribe on your Mac using Metal. GigaAM specializes in Russian. Parakeet TDT v3 covers 25 European languages. Download a model in Voai or point it at one you already have. Once the models are on disk, dictation and file transcription work offline.
 
 Text editing is optional. For dictation, use a GGUF model, a local Ollama or LM Studio server, or your own OpenAI or Anthropic API key. In cloud mode, the selected provider receives your instructions and transcript. File and Telegram transcripts use local models for editing.
 

@@ -34,7 +34,7 @@ cp "$sparkle/LICENSE" "$app/Contents/Resources/Licenses/Sparkle-LICENSE"
 cp crates/voai-speech/assets/fastenhancer/LICENSE "$app/Contents/Resources/Licenses/FastEnhancer-LICENSE"
 xcrun swiftc -O -parse-as-library -target arm64-apple-macosx14.0 \
     native/MediaHelper.swift -o "$stage/voai-media-helper"
-for binary in voai voai-text-helper voai-diarize voai-media-helper; do
+for binary in voai voai-asr-helper voai-text-helper voai-diarize voai-media-helper; do
     source="$build_dir/$binary"
     if [[ "$binary" == voai-media-helper ]]; then source="$stage/$binary"; fi
     lipo "$source" -verify_arch arm64
@@ -62,7 +62,7 @@ nested="$framework/Versions/B"
 for component in "$nested"/XPCServices/*.xpc "$nested/Autoupdate" "$nested/Updater.app" "$framework"; do
     codesign "${sign[@]}" --preserve-metadata=entitlements "$component"
 done
-for helper in voai-text-helper voai-media-helper voai-diarize; do
+for helper in voai-asr-helper voai-text-helper voai-media-helper voai-diarize; do
     codesign "${sign[@]}" "$app/Contents/MacOS/$helper"
 done
 entitlements=packaging/entitlements.plist

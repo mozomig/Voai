@@ -3,7 +3,7 @@
 ## Your first dictation
 
 1. At first launch, choose **Set up permissions**. Allow the microphone to record speech and Accessibility to insert text in other apps. You can skip setup to transcribe files, or revisit it under **Dictation → Permissions → Quick start**.
-2. Pick a speech model. Download one from the catalog or select a Whisper model on disk.
+2. Pick a speech model. Download one from the catalog or select a compatible speech model on disk.
 3. Click the test field, hold **⌥ Space**, speak, then release the keys. Try the same shortcut in your editor. Press **Esc** to cancel.
 
 To use a different shortcut, click the current one and press the keys you want. For right Command alone, press and release that key. For a letter with modifiers, press the letter while still holding the modifiers.
@@ -34,7 +34,7 @@ Open **Transcription** and choose a recording. The file workflow has three setti
 
 | Stage | What to choose |
 | --- | --- |
-| Speech recognition | Select a downloaded Whisper model or a local GGML file. Voai reads the audio track from a video directly. |
+| Speech recognition | Select Whisper, Parakeet or GigaAM from your speech models. Voai reads the audio track from a video directly. |
 | Speakers | Leave speaker identification off for plain text. To separate speakers, download the model pair or open a folder containing compatible `segmentation.onnx` and `embedding.onnx` files. |
 | Text editing | Keep the Whisper transcript or choose a local GGUF model. The model applies your saved editing instructions to each turn. Changed turns retain their originals. |
 
@@ -56,7 +56,7 @@ Unsent reply parts stay on the Mac until delivery is confirmed. Voai resumes aft
 
 ## Models and editing
 
-In **Models**, you can connect multilingual whisper.cpp GGML speech models (`.bin`) and single-file llama.cpp GGUF text models with a chat template (`.gguf`). Voai checks each file in a helper process and saves a reference to its location. Reconnect a file if you move or replace it. Removing the reference leaves your file on disk.
+In **Models**, choose **Speech** for Whisper GGML files or transcribe.cpp GigaAM and Parakeet GGUFs with word timestamps. GigaAM v3 E2E transcribes Russian with punctuation. Parakeet TDT v3 handles 25 European languages in one model. Under **Text**, choose a single-file llama.cpp GGUF with a chat template. The catalog includes Gemma 4 E4B and the non-thinking Qwen3 4B Instruct 2507 for local editing. Voai checks each file in a helper process and saves a reference to its location. Reconnect a file if you move or replace it. Removing the reference leaves your file on disk.
 
 Catalog downloads live in `~/Library/Application Support/Voai/Models`. You can follow progress, cancel or resume. Voai verifies SHA-256 before using the weights.
 

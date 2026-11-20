@@ -20,11 +20,9 @@ use std::{
 pub use worker::{validate_model, worker_main};
 
 /// Mono sample rate shared by recognition and saved recordings.
-pub const SAMPLE_RATE: u32 = 16_000;
-const RATE: usize = SAMPLE_RATE as usize;
-const MIN_SAMPLES: usize = RATE / 8;
+use voai_asr_worker::{MAX_SAMPLES, MIN_SAMPLES, RATE};
+pub const SAMPLE_RATE: u32 = RATE as u32;
 const INPUT_TIMEOUT: Duration = Duration::from_secs(7);
-const MAX_SAMPLES: usize = RATE * 60 * 5;
 const RECORDING: u8 = 0;
 const FINISHING: u8 = 1;
 const CANCELLED: u8 = 2;

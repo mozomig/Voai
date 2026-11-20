@@ -16,6 +16,43 @@ use std::{
 };
 use voai_l10n::tr;
 
+fn prompt_tokens(
+    model: &LlamaModel,
+    instruction: &str,
+    transcript: String,
+) -> Result<Vec<llama_cpp_2::token::LlamaToken>> {
+    let vocab = model.vocab();
+    let template = model.chat_template(None)?;
+    // llama.cpp's legacy chat formatter lacks Gemma 4. Use the model's
+    // two-turn, text-only format with thinking disabled. The user text and
+    // instruction must not be interpreted as special turn delimiters.
+    if model.meta_val_str("general.architecture").as_deref().ok() == Some("gemma4")
+        && template.to_str()?.contains("<|turn>")
+    {
+        let mut tokens = vec![vocab.bos()];
+        for (part, special) in [
+            ("<|turn>system\n", true),
+            (instruction.trim(), false),
+            ("<turn|>\n<|turn>user\n", true),
+            (transcript.trim(), false),
+            ("<turn|>\n<|turn>model\n", true),
+        ] {
+            tokens.extend(vocab.tokenize(part.as_bytes(), false, special));
+        }
+        return Ok(tokens);
+    }
+    let messages = [
+        LlamaChatMessage::new("system".into(), instruction.to_owned())?,
+        LlamaChatMessage::new("user".into(), transcript)?,
+    ];
+    let prompt = model.apply_chat_template(&template, &messages, true)?;
+    let mut tokens = vocab.tokenize(prompt.as_bytes(), false, true);
+    if vocab.should_add_bos() && tokens.first() != Some(&vocab.bos()) {
+        tokens.insert(0, vocab.bos());
+    }
+    Ok(tokens)
+}
+
 fn edit(
     backend: &LlamaBackend,
     model: &LlamaModel,
@@ -24,17 +61,8 @@ fn edit(
 ) -> Result<String> {
     const CONTEXT: u32 = 4096;
     const BATCH: usize = 256;
-    let messages = [
-        LlamaChatMessage::new("system".into(), instruction.to_owned())?,
-        LlamaChatMessage::new("user".into(), transcript)?,
-    ];
-    let prompt = model.apply_chat_template(&model.chat_template(None)?, &messages, true)?;
+    let tokens = prompt_tokens(model, instruction, transcript)?;
     let vocab = model.vocab();
-    // Some GGUF chat templates explicitly supply BOS (e.g. Gemma).
-    let mut tokens = vocab.tokenize(prompt.as_bytes(), false, true);
-    if vocab.should_add_bos() && tokens.first() != Some(&vocab.bos()) {
-        tokens.insert(0, vocab.bos());
-    }
     ensure!(
         !tokens.is_empty() && tokens.len() + 64 < CONTEXT as usize,
         tr("text.context.input")
@@ -100,11 +128,7 @@ fn validate_model(path: &Path) -> Result<()> {
             .with_n_gpu_layers(0)
             .with_use_mmap(true),
     )?;
-    let messages = [
-        LlamaChatMessage::new("system".into(), "Proofread the transcript".into())?,
-        LlamaChatMessage::new("user".into(), "test".into())?,
-    ];
-    model.apply_chat_template(&model.chat_template(None)?, &messages, true)?;
+    prompt_tokens(&model, "Proofread the transcript", "test".into())?;
     Ok(())
 }
 

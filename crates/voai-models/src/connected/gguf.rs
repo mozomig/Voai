@@ -1,6 +1,6 @@
 //! Bound native metadata allocations before handing user-supplied weights to
 //! llama.cpp. Only single-file models can be tracked by one file identity.
-use super::{read_u32, read_u64};
+use super::{ModelKind, read_u32, read_u64};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     fs::File,
@@ -8,7 +8,7 @@ use std::{
 };
 use voai_l10n::tr;
 
-pub(super) fn check(r: &mut BufReader<&File>, bytes: u64) -> Result<()> {
+pub(super) fn check(r: &mut BufReader<&File>, bytes: u64, kind: ModelKind) -> Result<()> {
     ensure!(matches!(read_u32(r)?, 2 | 3), tr("gguf.version"));
     let tensors = read_u64(r)?;
     let pairs = read_u64(r)?;
@@ -18,13 +18,21 @@ pub(super) fn check(r: &mut BufReader<&File>, bytes: u64) -> Result<()> {
             && tensors * 32 + pairs * 13 <= bytes,
         tr("gguf.header")
     );
+    let mut speech_architecture = false;
     for _ in 0..pairs {
         let key_len = read_u64(r)?;
         ensure!((1..=1024).contains(&key_len), tr("gguf.parameter"));
         let mut key = vec![0; key_len as usize];
         r.read_exact(&mut key)?;
         let value_type = read_u32(r)?;
-        if key == b"split.count" {
+        if key == b"general.architecture" {
+            ensure!(value_type == 8, tr("gguf.parameter"));
+            let len = read_u64(r)?;
+            ensure!((1..=128).contains(&len), tr("gguf.parameter"));
+            let mut arch = vec![0; len as usize];
+            r.read_exact(&mut arch)?;
+            speech_architecture = matches!(arch.as_slice(), b"gigaam" | b"parakeet");
+        } else if key == b"split.count" {
             ensure!(value_type == 2, tr("gguf.split.type"));
             let mut split = [0; 2];
             r.read_exact(&mut split)?;
@@ -62,5 +70,9 @@ pub(super) fn check(r: &mut BufReader<&File>, bytes: u64) -> Result<()> {
             tr("gguf.metadata")
         );
     }
+    ensure!(
+        speech_architecture == (kind == ModelKind::Speech),
+        tr("model.gguf.kind")
+    );
     Ok(())
 }

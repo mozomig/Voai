@@ -104,7 +104,7 @@ impl Settings {
             multiple: false,
             prompt: Some(
                 match tab {
-                    ModelTab::Speech => tr("ui.model.whisper_file"),
+                    ModelTab::Speech => tr("ui.model.speech_file"),
                     ModelTab::Text => tr("ui.model.gguf_file"),
                     ModelTab::Speakers => tr("ui.model.choose_folder"),
                 }

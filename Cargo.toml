@@ -47,11 +47,11 @@ cc = "1"
 
 [workspace]
 resolver = "3"
-members = ["crates/voai-l10n", "crates/voai-diarize", "crates/voai-models", "crates/voai-speech", "crates/voai-text-helper"]
+members = ["crates/voai-asr-worker", "crates/voai-asr-helper", "crates/voai-l10n", "crates/voai-diarize", "crates/voai-models", "crates/voai-speech", "crates/voai-text-helper"]
 default-members = ["."]
 
 [workspace.package]
-version = "1.6.0"
+version = "1.7.0"
 edition = "2024"
 
 [profile.dev]

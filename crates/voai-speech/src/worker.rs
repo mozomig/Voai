@@ -1,5 +1,5 @@
 //! One outstanding decode per helper. All IPC and model loads run off the UI and audio threads.
-use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::io::{self, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, mpsc};
@@ -9,52 +9,10 @@ use voai_l10n::{tf, tr};
 
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-use crate::{MAX_SAMPLES, MIN_SAMPLES, RATE};
+use crate::{MIN_SAMPLES, RATE};
 
-const PROTOCOL: &[u8; 8] = b"VOAIS001";
-const MAX_REPLY: usize = 1 << 20;
+use voai_asr_worker::{PROTOCOL, read_reply};
 const KEEP_WARM: Duration = Duration::from_secs(90);
-
-fn read_u32(r: &mut impl Read) -> io::Result<u32> {
-    let mut bytes = [0; 4];
-    r.read_exact(&mut bytes)?;
-    Ok(u32::from_le_bytes(bytes))
-}
-
-fn write_reply(w: &mut impl Write, reply: Result<&str, &str>) -> io::Result<()> {
-    let (code, text) = match reply {
-        Ok(text) => (0, text),
-        Err(text) => (1, text),
-    };
-    if text.len() > MAX_REPLY {
-        return Err(io::Error::other(tr("speech.reply.large")));
-    }
-    w.write_all(&[code])?;
-    w.write_all(&(text.len() as u32).to_le_bytes())?;
-    w.write_all(text.as_bytes())?;
-    w.flush()
-}
-
-fn read_reply(r: &mut impl Read) -> Result<String, String> {
-    fn read(r: &mut impl Read) -> io::Result<(u8, String)> {
-        let mut status = [0];
-        r.read_exact(&mut status)?;
-        let size = read_u32(r)? as usize;
-        if size > MAX_REPLY {
-            return Err(io::Error::other(tr("speech.reply.large")));
-        }
-        let mut bytes = vec![0; size];
-        r.read_exact(&mut bytes)?;
-        let text = String::from_utf8(bytes).map_err(io::Error::other)?;
-        Ok((status[0], text))
-    }
-    match read(r) {
-        Ok((0, text)) => Ok(text),
-        Ok((1, error)) => Err(error),
-        Ok(_) => Err(tr("speech.reply.invalid").into()),
-        Err(e) => Err(tf!("speech.worker.lost", e = e)),
-    }
-}
 
 /// Verify imported weights in an isolated CPU-only context, without capturing audio.
 pub fn validate_model(model: &Path) -> Result<(), String> {
@@ -101,66 +59,25 @@ pub fn worker_main() -> Result<(), String> {
         .next()
         .and_then(|s| s.into_string().ok())
         .filter(|s| s != "auto");
-    run_worker(
-        Path::new(&model),
-        language.as_deref(),
-        io::stdin().lock(),
-        io::stdout().lock(),
-    )
-    .map_err(|e| e.to_string())
-}
-
-fn run_worker(
-    model: &Path,
-    language: Option<&str>,
-    stdin: impl Read,
-    stdout: impl Write,
-) -> io::Result<()> {
-    let mut input = BufReader::new(stdin);
-    let mut output = BufWriter::new(stdout);
-    let mut protocol = [0; 8];
-    input.read_exact(&mut protocol)?;
-    if &protocol != PROTOCOL {
-        return Err(io::Error::other(tr("speech.protocol")));
-    }
-
     whisper_rs::install_logging_hooks();
-    let ctx = match WhisperContext::new_with_params(model, WhisperContextParameters::default()) {
-        Ok(ctx) => ctx,
-        Err(err) => {
-            return write_reply(&mut output, Err(&tf!("speech.open.detail", err = err)));
-        }
-    };
-    let mut state = None;
-    write_reply(&mut output, Ok(""))?;
-    loop {
-        let mut kind = [0u8];
-        match input.read_exact(&mut kind) {
-            Ok(()) if kind[0] < 2 => {}
-            Ok(()) => return Err(io::Error::other(tr("speech.command"))),
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(()),
-            Err(e) => return Err(e),
-        }
-        let size = read_u32(&mut input)? as usize;
-        if size > MAX_SAMPLES {
-            return Err(io::Error::other(tr("speech.limit.samples")));
-        }
-        // Both processes are slices of the same macOS binary and share the float ABI.
-        let mut samples = vec![0.0f32; size];
-        input.read_exact(bytemuck::cast_slice_mut(&mut samples))?;
-        let decoder = match &mut state {
-            Some(state) => state,
-            None => match ctx.create_state() {
-                Ok(created) => state.insert(created),
-                Err(e) => return write_reply(&mut output, Err(&e.to_string())),
-            },
-        };
-        let result = decode(decoder, &samples, language);
-        if kind[0] == 1 {
-            state.take();
-        }
-        write_reply(&mut output, result.as_deref().map_err(String::as_str))?;
-    }
+    voai_asr_worker::serve(|| {
+        let ctx =
+            WhisperContext::new_with_params(Path::new(&model), WhisperContextParameters::default())
+                .map_err(|err| tf!("speech.open.detail", err = err))?;
+        let mut state = None;
+        Ok(move |samples: &[f32], finished: bool| {
+            let decoder = match &mut state {
+                Some(decoder) => decoder,
+                None => state.insert(ctx.create_state().map_err(|e| e.to_string())?),
+            };
+            let result = decode(decoder, samples, language.as_deref());
+            if finished {
+                state.take();
+            }
+            result
+        })
+    })
+    .map_err(|e| e.to_string())
 }
 
 pub(super) fn decode_params(language: Option<&str>) -> FullParams<'_, 'static> {
@@ -361,28 +278,5 @@ impl Drop for Worker {
         // Unblocks a pipe thread even during model load or stuck native inference.
         let _ = self.child.kill();
         let _ = self.child.wait();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn bad_reply_length_is_rejected_before_allocation() {
-        let bytes = [0, 255, 255, 255, 255];
-        assert!(read_reply(&mut &bytes[..]).is_err());
-    }
-    #[test]
-    fn preserves_error_and_unicode_text() {
-        for expected in [Ok("Сегодня пятница 🎙"), Err("Нет модели")] {
-            let mut bytes = vec![];
-            write_reply(&mut bytes, expected).unwrap();
-            assert_eq!(
-                read_reply(&mut bytes.as_slice())
-                    .as_deref()
-                    .map_err(String::as_str),
-                expected
-            );
-        }
     }
 }
