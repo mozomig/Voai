@@ -81,4 +81,6 @@ VOAI_NOTARY_PROFILE='voai-notary' \
 
 4. Create a draft GitHub Release tagged `v<version>`. Attach `Voai-<version>-arm64.dmg`, `Voai.zip` and `appcast.xml` from `target/dist/v<version>/`. Publish it as **Latest**. Sparkle checks `releases/latest/download/appcast.xml`, then downloads the DMG from the versioned tag. If the DMG changes, regenerate the signatures and feed.
 
+For a release without Apple notarization, leave `VOAI_NOTARY_PROFILE` unset, set `VOAI_SIGN_IDENTITY=-` for ad hoc signing and set `VOAI_DIST_DIR` to your release directory. Run `./scripts/package-macos`, verify both archives, then run `./scripts/make-appcast` with the same environment. Publish the three assets together as in step 4. Describe the first-launch Gatekeeper prompt in the release notes. The Sparkle private key stays in Keychain.
+
 For a local rehearsal with a development certificate, run `./scripts/package-macos`, `./scripts/make-appcast` and `./scripts/verify-macos-release path/to/image.dmg`. The artifacts are written to `target/dist/release/`. [Publishing with Sparkle](https://sparkle-project.org/documentation/publishing/)

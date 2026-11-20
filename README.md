@@ -18,7 +18,9 @@ Text editing is optional. For dictation, use a GGUF model, a local Ollama or LM 
 
 ## Try it
 
-Voai currently builds from source. You'll need an Apple Silicon Mac, Xcode with the Metal toolchain, CMake and a stable Rust toolchain that supports the 2024 edition.
+Download the DMG from [GitHub Releases](https://github.com/mozomig/Voai/releases), open it and drag Voai to Applications. Version 1.6.0 is distributed without Apple notarization. If macOS blocks the first launch, you can review Voai in **System Settings → Privacy & Security** after trying to open it. Voai checks for signed updates through Sparkle.
+
+To build from source, you'll need Xcode with the Metal toolchain, CMake and a stable Rust toolchain that supports the 2024 edition.
 
 ```sh
 git clone https://github.com/mozomig/Voai.git
@@ -27,6 +29,6 @@ cd Voai
 open target/dist/release/Voai.app
 ```
 
-Open **Dictation**, grant microphone and Accessibility access, and choose a speech model. Try a phrase in the test field before switching to your editor. Voai follows your Mac's preferred language and lets you select English or Russian in settings. You can choose the language you dictate in separately.
+The quick start walks you through microphone and Accessibility permissions, then opens the speech model picker. Try a phrase in the test field before switching to your editor. Voai follows your Mac's preferred language and lets you select English or Russian in settings. You can choose the language you dictate in separately.
 
 [User guide](docs/usage.md) · [Build and release](docs/development.md) · [Architecture](ARCHITECTURE.md) · [Releases](https://github.com/mozomig/Voai/releases)
