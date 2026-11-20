@@ -1,10 +1,10 @@
 use super::{
-    Event, Signals,
+    DeliveryDecision, Event, Signals,
     api::{Api, Error, MAX_BYTES, Message},
-    state::{self, State},
+    state::{self, PendingReply, State},
 };
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     thread,
     time::{Duration, Instant},
 };
@@ -59,21 +59,29 @@ pub(super) fn serve(
     signals: &Signals,
     api: &Api,
     mut state: State,
+    state_path: &Path,
     transcribe: impl Fn(PathBuf) -> Result<String, String>,
 ) -> Result<(), String> {
     let (bot, username) = connected(signals, READY, || api.me())?;
     if state.bot.is_some_and(|known| known != bot) {
         return Err("Токен принадлежит другому боту. Подключите его заново.".into());
     }
-    state.bot = Some(bot);
-    signals.request(|tx| Event::Checkpoint(state.clone(), tx))?;
+    if state.bot.is_none() {
+        state.bot = Some(bot);
+        state.save(state_path)?;
+    }
     let secret = Uuid::new_v4().simple().to_string();
     let link = state
         .owner
         .is_none()
         .then(|| format!("https://t.me/{username}?start={secret}"));
-    signals.event(Event::Identity { username, link })?;
+    signals.event(Event::Identity {
+        username,
+        owner: state.owner,
+        link,
+    })?;
     signals.status(if state.owner.is_some() { READY } else { PAIR })?;
+    deliver_pending(signals, api, &mut state, state_path)?;
     let pair_command = format!("/start {secret}");
     loop {
         let offset = state.offset(state::now());
@@ -86,51 +94,118 @@ pub(super) fn serve(
             if update.id < state.offset(state::now()) {
                 continue;
             }
+            let was_unpaired = state.owner.is_none();
             let reply = match update.message {
                 Some(message) if state.owner == Some(message.chat) => {
                     let text = response(signals, api, &message, &transcribe)?;
-                    Some((message.chat, message.id, text))
+                    Some((message.id, text))
                 }
                 Some(message)
                     if state.owner.is_none() && message.text.as_deref() == Some(&pair_command) =>
                 {
                     state.owner = Some(message.chat);
                     signals.status(READY)?;
-                    Some((message.chat, message.id, HELP.into()))
+                    Some((message.id, HELP.into()))
                 }
                 _ => None,
             };
-            // Checkpoint after inference but before sending. If Telegram accepts a reply
-            // and loses the connection, restarting must not send the same text again.
             state.advance(update.id, state::now());
-            if let Some((chat, id, text)) = reply {
-                signals.request(|tx| Event::Checkpoint(state.clone(), tx))?;
-                'parts: for (index, part) in chunks(&text).enumerate() {
-                    if index > 0 {
-                        wait(signals, Duration::from_secs(1))?;
-                    }
-                    loop {
-                        if !signals.active() {
-                            return Ok(());
-                        }
-                        match api.send(chat, id, part) {
-                            Ok(()) => break,
-                            Err(error @ Error::RateLimited(_)) => {
-                                wait(signals, error.retry_delay())?
-                            }
-                            Err(error) if error.fatal() => return Err(error.to_string()),
-                            Err(_) => {
-                                signals.status(
-                                    "Не удалось доставить ответ. Перешлите запись ещё раз.",
-                                )?;
-                                break 'parts;
-                            }
-                        }
-                    }
+            if let Some((message, text)) = reply {
+                state.pending = Some(PendingReply {
+                    message,
+                    remaining: chunks(&text).map(str::to_owned).collect(),
+                    confirmed: 0,
+                    in_flight: false,
+                });
+                // Commit the next update and its complete reply together, before sending.
+                state.save(state_path)?;
+                if was_unpaired && let Some(owner) = state.owner {
+                    signals.event(Event::Paired(owner))?;
                 }
+                deliver_pending(signals, api, &mut state, state_path)?;
             }
         }
     }
+}
+
+fn deliver_pending(
+    signals: &Signals,
+    api: &Api,
+    state: &mut State,
+    path: &Path,
+) -> Result<(), String> {
+    while let Some(pending) = state.pending.as_mut() {
+        let chat = state
+            .owner
+            .ok_or("Не удалось определить получателя ответа.")?;
+        let Some(text) = pending.remaining.front() else {
+            state.pending = None;
+            state.save(path)?;
+            signals.status(READY)?;
+            break;
+        };
+        if !signals.active() {
+            return Err("Остановлено.".into());
+        }
+
+        if pending.in_flight {
+            let decision = signals.request(|decision| Event::Unconfirmed {
+                part: pending.confirmed + 1,
+                total: pending.confirmed + pending.remaining.len(),
+                decision,
+            })?;
+            if matches!(decision, DeliveryDecision::Confirm) {
+                pending.remaining.pop_front();
+                pending.confirmed += 1;
+            }
+            pending.in_flight = false;
+            state.save(path)?;
+            continue;
+        }
+        let message = pending.message;
+        let part = text.clone();
+        pending.in_flight = true;
+        state.save(path)?;
+        // Once an attempt begins, only a definitive Telegram response (or the owner)
+        // can clear this flag. A lost HTTP response cannot prove non-delivery.
+        if !signals.active() {
+            // We have not called Telegram yet, so the next launch can send safely.
+            if let Some(pending) = &mut state.pending {
+                pending.in_flight = false;
+            }
+            state.save(path)?;
+            return Err("Остановлено.".into());
+        }
+        let result = api.send(chat, message, &part);
+        let pending = state.pending.as_mut().expect("current delivery");
+        match result {
+            Ok(()) => {
+                pending.remaining.pop_front();
+                pending.confirmed += 1;
+                pending.in_flight = false;
+                let more = !pending.remaining.is_empty();
+                if !more {
+                    state.pending = None;
+                }
+                state.save(path)?;
+                if more {
+                    wait(signals, Duration::from_secs(1))?;
+                }
+            }
+            Err(error @ Error::RateLimited(_)) => {
+                pending.in_flight = false;
+                state.save(path)?;
+                wait(signals, error.retry_delay())?;
+            }
+            Err(error) if error.definitely_rejected() => {
+                pending.in_flight = false;
+                state.save(path)?;
+                return Err(error.to_string());
+            }
+            Err(_) => continue, // Ask the owner before resending an ambiguous part.
+        }
+    }
+    Ok(())
 }
 
 fn response(
@@ -148,7 +223,17 @@ fn response(
     signals.status("Загружаю запись…")?;
     let dir = tempfile::tempdir().map_err(|_| "Не удалось создать временную папку.")?;
     let file = dir.path().join(format!("media.{}", media.extension));
-    if let Err(error) = api.download(&media.id, &file, &signals.cancelled) {
+    let mut retries = 0;
+    while let Err(error) = api.download(&media.id, &file, &signals.cancelled) {
+        if retries < 4 && error.retryable_download() {
+            signals.status("Загрузка прервалась. Повторяю…")?;
+            wait(
+                signals,
+                Duration::from_secs(1 << retries).max(error.retry_delay()),
+            )?;
+            retries += 1;
+            continue;
+        }
         if error.fatal() {
             return Err(error.to_string());
         }

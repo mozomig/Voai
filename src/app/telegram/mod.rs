@@ -1,5 +1,5 @@
-//! The main thread owns durable settings. Each polling worker has a private event channel:
-//! disconnecting invalidates outstanding requests before another worker can use the bot.
+//! One background worker owns Telegram state, credentials and delivery. Workers
+//! are serialized across reconnects and each has a private UI event channel.
 mod api;
 mod state;
 #[cfg(test)]
@@ -27,25 +27,42 @@ pub struct TelegramView {
     pub running: bool,
     pub username: Option<String>,
     pub pairing_url: Option<String>,
-    pub paired: bool,
+    pub owner: Option<i64>,
+    pub awaiting_confirmation: bool,
     pub status: String,
 }
 
 pub enum TelegramCommand {
     Connect(String),
     Retry,
+    ResendPart,
+    ConfirmDelivery,
     Disconnect,
 }
 
 enum Event {
     Identity {
         username: String,
+        owner: Option<i64>,
         link: Option<String>,
     },
     Status(String),
-    Checkpoint(State, mpsc::Sender<Result<(), String>>),
+    Paired(i64),
+    Unconfirmed {
+        part: usize,
+        total: usize,
+        decision: mpsc::Sender<Result<DeliveryDecision, String>>,
+    },
     Pipeline(mpsc::Sender<Result<BotPipeline, String>>),
-    End(Result<(), String>),
+    End {
+        configured: bool,
+        result: Result<(), String>,
+    },
+}
+
+enum DeliveryDecision {
+    Resend,
+    Confirm,
 }
 
 struct Signals {
@@ -82,72 +99,69 @@ impl Signals {
 pub(super) struct Telegram {
     pub view: TelegramView,
     path: PathBuf,
-    state: Option<State>,
+    decision: Option<mpsc::Sender<Result<DeliveryDecision, String>>>,
+    disconnecting: bool,
     wake: async_channel::Sender<()>,
     events: Option<mpsc::Receiver<Event>>,
     cancel: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
 }
 
+enum Operation {
+    Restore,
+    Connect(Zeroizing<String>),
+    Disconnect,
+}
+
 impl Telegram {
     pub fn new(dir: &Path, wake: async_channel::Sender<()>) -> Self {
         let path = dir.join("telegram.json");
-        let loaded = State::load(&path);
         let mut this = Self {
             view: TelegramView::default(),
             path,
-            state: None,
+            decision: None,
+            disconnecting: false,
             wake,
             events: None,
             cancel: Arc::default(),
             worker: None,
         };
-        match loaded {
-            Ok(Some(state)) => {
-                this.state = Some(state);
-                this.start();
-            }
-            Ok(None) => {}
-            Err(error) => this.view.status = error,
+        match this.path.try_exists() {
+            Ok(true) => this.start(Operation::Restore),
+            Ok(false) => {}
+            Err(_) => this.view.status = "Не удалось открыть настройки Telegram.".into(),
         }
         this
     }
 
     pub fn dispatch(&mut self, cmd: TelegramCommand) {
-        let result = match cmd {
-            TelegramCommand::Connect(token) if self.state.is_none() => {
-                self.connect(Zeroizing::new(token))
-            }
-            TelegramCommand::Disconnect => self.disconnect(),
-            TelegramCommand::Retry if !self.view.running => {
-                self.start();
-                Ok(())
-            }
-            _ => Ok(()),
-        };
-        if let Err(error) = result {
-            self.view.status = error;
-        }
-    }
-
-    fn connect(&mut self, token: Zeroizing<String>) -> Result<(), String> {
-        let token = token.trim();
-        Api::new(token)?;
-        let state = State::new();
-        state.set_token(token)?;
-        if let Err(e) = state.save(&self.path) {
-            state.forget()?;
-            return Err(e);
-        }
-        self.state = Some(state);
-        self.start();
-        Ok(())
-    }
-
-    fn start(&mut self) {
-        let Some(state) = self.state.clone() else {
+        if self.disconnecting {
             return;
-        };
+        }
+        match cmd {
+            TelegramCommand::Connect(token) if !self.view.enabled => {
+                self.start(Operation::Connect(Zeroizing::new(token)))
+            }
+            TelegramCommand::Disconnect if self.view.enabled => self.start(Operation::Disconnect),
+            TelegramCommand::Retry if self.view.enabled && !self.view.running => {
+                self.start(Operation::Restore)
+            }
+            TelegramCommand::ResendPart => self.resolve(DeliveryDecision::Resend),
+            TelegramCommand::ConfirmDelivery => self.resolve(DeliveryDecision::Confirm),
+            _ => {}
+        }
+    }
+
+    fn resolve(&mut self, choice: DeliveryDecision) {
+        if let Some(tx) = self.decision.take() {
+            let _ = tx.send(Ok(choice));
+            self.view.awaiting_confirmation = false;
+            self.view.status = "Бот на связи.".into();
+        }
+    }
+
+    fn start(&mut self, op: Operation) {
+        self.stop();
         let previous = self.worker.take();
         self.cancel = Arc::default();
         let (tx, rx) = mpsc::channel();
@@ -157,29 +171,33 @@ impl Telegram {
             cancelled: self.cancel.clone(),
         };
         self.events = Some(rx);
+        self.disconnecting = matches!(op, Operation::Disconnect);
         self.view = TelegramView {
             enabled: true,
             running: true,
-            paired: state.owner.is_some(),
-            status: "Подключение к Telegram…".into(),
+            status: if self.disconnecting {
+                "Отключаю бота…"
+            } else {
+                "Подключение к Telegram…"
+            }
+            .into(),
             ..Default::default()
         };
+        let path = self.path.clone();
         self.worker = Some(thread::spawn(move || {
             if let Some(previous) = previous {
                 let _ = previous.join();
             }
-            if signals.active() {
-                let result = state
-                    .token()
-                    .and_then(|secret| Api::new(&secret))
-                    .and_then(|api| {
-                        worker::serve(&signals, &api, state, |path| {
-                            let pipeline = signals.request(Event::Pipeline)?;
-                            pipeline.transcribe(path, signals.cancelled.clone())
-                        })
-                    });
-                let _ = signals.event(Event::End(result));
-            }
+            // Disconnect must finish even if the user quits while the old worker is unwinding.
+            let result = match op {
+                Operation::Disconnect => forget_connection(&path),
+                _ if !signals.active() => return,
+                _ => run_bot(op, &path, &signals),
+            };
+            let _ = signals.event(Event::End {
+                configured: path.try_exists().unwrap_or(true),
+                result,
+            });
         }));
     }
 
@@ -188,57 +206,90 @@ impl Telegram {
         if let Some(worker) = &self.worker {
             worker.thread().unpark();
         }
-        // Drops queued request reply senders, releasing a worker waiting on the UI.
         self.events = None;
-        self.view.running = false;
-        self.view.pairing_url = None;
-    }
-
-    fn disconnect(&mut self) -> Result<(), String> {
-        self.stop();
-        if let Some(state) = &self.state {
-            state.forget()?;
-            match fs::remove_file(&self.path) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(_) => return Err("Не удалось удалить настройки Telegram.".into()),
-            }
-        }
-        self.state = None;
-        self.view = TelegramView::default();
-        Ok(())
+        self.decision = None;
     }
 
     pub fn poll(&mut self, pipeline: impl Fn() -> Result<BotPipeline, String>) {
         let Some(events) = &self.events else { return };
         while let Ok(event) = events.try_recv() {
             match event {
-                Event::Identity { username, link } => {
+                Event::Identity {
+                    username,
+                    owner,
+                    link,
+                } => {
                     self.view.username = Some(username);
+                    self.view.owner = owner;
                     self.view.pairing_url = link;
                 }
-                Event::Status(text) => self.view.status = text,
-                Event::Checkpoint(state, tx) => {
-                    let result = state.save(&self.path);
-                    if result.is_ok() {
-                        self.view.paired = state.owner.is_some();
-                        if self.view.paired {
-                            self.view.pairing_url = None;
-                        }
-                        self.state = Some(state);
-                    }
-                    let _ = tx.send(result);
+                Event::Paired(owner) => {
+                    self.view.owner = Some(owner);
+                    self.view.pairing_url = None;
                 }
+                Event::Status(text) => self.view.status = text,
                 Event::Pipeline(tx) => {
                     let _ = tx.send(pipeline());
                 }
-                Event::End(result) => {
+                Event::Unconfirmed {
+                    part,
+                    total,
+                    decision,
+                } => {
+                    self.view.status = format!(
+                        "Telegram не подтвердил доставку. Проверьте в чате часть {part} из {total}."
+                    );
+                    self.view.awaiting_confirmation = true;
+                    self.decision = Some(decision);
+                }
+                Event::End { configured, result } => {
+                    self.disconnecting = false;
+                    if !configured {
+                        self.view = TelegramView::default();
+                    }
                     self.view.running = false;
                     self.view.pairing_url = None;
-                    self.view.status = result.err().unwrap_or_else(|| "Бот остановлен.".into());
+                    self.view.status = result.err().unwrap_or_default();
                 }
             }
         }
+    }
+}
+
+fn run_bot(op: Operation, path: &Path, signals: &Signals) -> Result<(), String> {
+    let (state, api) = match op {
+        Operation::Connect(token) => {
+            let token = token.trim();
+            let api = Api::new(token)?;
+            let state = State::new();
+            state.set_token(token)?;
+            if let Err(e) = state.save(path) {
+                state.forget()?;
+                return Err(e);
+            }
+            (state, api)
+        }
+        Operation::Restore => {
+            let state = State::load(path)?.ok_or("Подключите бота заново.")?;
+            let api = Api::new(&state.token()?)?;
+            (state, api)
+        }
+        Operation::Disconnect => unreachable!(),
+    };
+    worker::serve(signals, &api, state, path, |source| {
+        let pipeline = signals.request(Event::Pipeline)?;
+        pipeline.transcribe(source, signals.cancelled.clone())
+    })
+}
+
+fn forget_connection(path: &Path) -> Result<(), String> {
+    if let Some(state) = State::load(path)? {
+        state.forget()?;
+    }
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("Не удалось удалить настройки Telegram.".into()),
     }
 }
 

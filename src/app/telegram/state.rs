@@ -2,7 +2,7 @@ use security_framework::passwords::{
     delete_generic_password, get_generic_password, set_generic_password,
 };
 use serde::{Deserialize, Serialize};
-use std::{fs, io, path::Path, time::SystemTime};
+use std::{collections::VecDeque, fs, io, path::Path, time::SystemTime};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -10,11 +10,21 @@ const SERVICE: &str = "Voai.Telegram";
 const STORE_ERROR: &str = "Не удалось сохранить настройки Telegram на Mac.";
 const KEY_ERROR: &str = "Не удалось открыть токен в Связке ключей.";
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+pub(super) struct PendingReply {
+    pub message: i64,
+    pub remaining: VecDeque<String>,
+    pub confirmed: usize,
+    pub in_flight: bool,
+}
+
+#[derive(Serialize, Deserialize)]
 pub(super) struct State {
     account: String,
     pub bot: Option<i64>,
     pub owner: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending: Option<PendingReply>,
     next_update: i64,
     updated: u64,
 }
@@ -25,6 +35,7 @@ impl State {
             account: Uuid::new_v4().to_string(),
             bot: None,
             owner: None,
+            pending: None,
             next_update: 0,
             updated: 0,
         }

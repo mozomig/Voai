@@ -31,6 +31,17 @@ impl Error {
         matches!(self, Self::Rejected(401 | 403 | 404 | 409))
     }
 
+    pub(super) fn retryable_download(&self) -> bool {
+        matches!(
+            self,
+            Self::Network | Self::RateLimited(_) | Self::Rejected(408 | 429 | 500..=599)
+        )
+    }
+
+    pub(super) fn definitely_rejected(&self) -> bool {
+        matches!(self, Self::ChatUnavailable | Self::Rejected(400..=407 | 409..=499))
+    }
+
     pub(super) fn retry_delay(&self) -> Duration {
         match self {
             Self::RateLimited(seconds) => Duration::from_secs((*seconds).max(1)),
@@ -274,6 +285,15 @@ impl Api {
             .header("Accept-Encoding", "identity")
             .call()
             .map_err(|_| Error::Network)?;
+        if response.status().as_u16() == 429 {
+            let delay = response
+                .headers()
+                .get("retry-after")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(5);
+            return Err(Error::RateLimited(delay));
+        }
         if response.status().as_u16() == 404 {
             return Err(Error::FileUnavailable);
         }
@@ -297,6 +317,9 @@ impl Api {
             MAX_BYTES,
             cancelled,
         )?;
+        if info.file_size.is_some_and(|size| count < size) {
+            return Err(Error::Network);
+        }
         if count == 0 || info.file_size.is_some_and(|size| count != size) {
             return Err(Error::InvalidResponse);
         }

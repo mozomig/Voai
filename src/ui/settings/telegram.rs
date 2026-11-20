@@ -125,13 +125,30 @@ impl Settings {
                     this.send(Command::Telegram(TelegramCommand::Disconnect))
                 })),
         ));
-        if !bot.running {
+        if bot.awaiting_confirmation {
+            page = page.child(
+                row()
+                    .gap_2()
+                    .child(
+                        primary_button("telegram-confirm", "Уже в чате", p).on_click(cx.listener(
+                            |this, _, _, _| {
+                                this.send(Command::Telegram(TelegramCommand::ConfirmDelivery))
+                            },
+                        )),
+                    )
+                    .child(button("telegram-resend", "Отправить ещё раз", p).on_click(
+                        cx.listener(|this, _, _, _| {
+                            this.send(Command::Telegram(TelegramCommand::ResendPart))
+                        }),
+                    )),
+            );
+        } else if !bot.running {
             page = page.child(row().child(
                 primary_button("telegram-retry", "Повторить", p).on_click(cx.listener(
                     |this, _, _, _| this.send(Command::Telegram(TelegramCommand::Retry)),
                 )),
             ));
-        } else if !bot.paired && bot.pairing_url.is_some() {
+        } else if bot.owner.is_none() && bot.pairing_url.is_some() {
             let pair = primary_button("telegram-pair", "Привязать аккаунт", p).on_click(
                 cx.listener(|this, _, _, cx| {
                     if let Some(url) = &this.engine.borrow().snapshot().telegram.pairing_url {
@@ -140,18 +157,20 @@ impl Settings {
                 }),
             );
             page = page
-                .child(text("Откройте чат с ботом и нажмите «Старт». После привязки он будет принимать записи только от вас.", 13., p.ink))
+                .child(text("Откройте ссылку под своим аккаунтом Telegram и нажмите «Старт». Бот будет принимать записи только от этого аккаунта.", 13., p.ink))
                 .child(row().child(pair));
-        } else if bot.paired
+        }
+        if let Some(owner) = bot.owner
             && let Some(name) = &bot.username
         {
             let url = format!("https://t.me/{name}");
-            page = page.child(
-                row().child(
-                    primary_button("telegram-chat", "Открыть чат", p)
-                        .on_click(move |_, _, cx| cx.open_url(&url)),
-                ),
-            );
+            page = page.child(Self::setting(
+                p,
+                "Разрешённый отправитель",
+                &format!("Telegram ID {owner}"),
+                button("telegram-chat", "Открыть чат", p)
+                    .on_click(move |_, _, cx| cx.open_url(&url)),
+            ));
         }
         page.child(Self::setting(
             p,
