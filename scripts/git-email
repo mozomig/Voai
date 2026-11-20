@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""Configure this clone or check the raw identities Git would publish."""
+import re
+import subprocess
+import sys
+
+
+def git(*args):
+    return subprocess.check_output(["git", *args])
+
+
+def check(email):
+    if not re.fullmatch(rb"[A-Za-z0-9_+.-]+@users\.noreply\.github\.com", email):
+        sys.exit("Voai requires a GitHub noreply address. Run scripts/git-email setup ADDRESS.")
+
+
+def check_ident(raw):
+    match = re.search(rb" <([^<>]+)> -?\d+ [+-]\d{4}$", raw.rstrip(b"\n"))
+    check(match[1] if match else b"")
+
+
+def check_push():
+    tips = set()
+    for line in sys.stdin.buffer:
+        _, oid, _, _ = line.split()
+        if not oid.strip(b"0"):
+            continue  # Ref deletion.
+        while git("cat-file", "-t", oid).strip() == b"tag":
+            headers = git("cat-file", "tag", oid).split(b"\n\n", 1)[0].splitlines()
+            for header in headers:
+                if header.startswith(b"tagger "):
+                    check_ident(header)
+            oid = headers[0].removeprefix(b"object ")
+        if git("cat-file", "-t", oid).strip() != b"commit":
+            sys.exit("Voai publishes branches and tags pointing to commits.")
+        tips.add(oid)
+    if tips:
+        for line in git("log", "--no-notes", "--no-show-signature", "--format=%ae%x00%ce", *tips, "--").splitlines():
+            for address in line.split(b"\0"):
+                check(address)
+
+
+if sys.argv[1:2] == ["setup"] and len(sys.argv) == 3:
+    check(sys.argv[2].encode())
+    git("config", "--local", "user.email", sys.argv[2])
+    git("config", "--local", "core.hooksPath", ".githooks")
+elif sys.argv[1:] == ["commit"]:
+    for kind in ("GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"):
+        check_ident(git("var", kind))
+elif sys.argv[1:] == ["push"]:
+    check_push()
+else:
+    sys.exit("Usage: scripts/git-email setup GITHUB_NOREPLY_ADDRESS | commit | push")

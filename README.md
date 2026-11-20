@@ -109,6 +109,8 @@ swift tests/macos/input.swift "$PWD/target/dist/release/Voai.app/Contents/MacOS/
 
 ## Подготовка публичного релиза
 
+При первом клонировании скопируйте свой адрес `@users.noreply.github.com` из **GitHub → Settings → Emails** и выполните `./scripts/git-email setup ВАШ_АДРЕС`. Команда задаёт почту только для этого репозитория и подключает хуки. Перед коммитом Git проверит адреса автора и коммитера, перед пушем — историю отправляемых веток и авторство тегов.
+
 Сборка берёт адрес репозитория из GitHub-remote `origin`. Для отдельного репозитория релизов задайте `VOAI_RELEASE_REPOSITORY=owner/repo`. Без адреса обычная локальная сборка запускается с отключённой проверкой обновлений.
 
 1. Увеличьте версию workspace и обновите `Cargo.lock`. В `packaging/Info.plist` задайте ту же версию и увеличьте `CFBundleVersion`. Sparkle сравнивает номера сборок.

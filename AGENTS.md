@@ -9,6 +9,8 @@ Voai is a macOS dictation application. Use Rust edition 2024 and the workspace l
 
 ## Commit messages
 
+- Before committing from a new clone, run `./scripts/git-email setup YOUR_GITHUB_NOREPLY_ADDRESS`. Use a GitHub noreply identity for authors, committers and annotated tags.
+
 - Follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/). Use `type: summary` or `type(scope): summary`. Include a scope when it helps identify the affected area, as in `fix(hotkeys): recognize right Command on release`.
 - Use `feat` for new functionality, `fix` for bug fixes, and a descriptive type such as `docs`, `refactor`, `test`, `perf`, `build`, `ci`, or `chore` for other changes.
 - Write a concise English summary in the imperative mood without a trailing period. If the reason for the change needs explanation, add a body after a blank line. Mark breaking changes with `!` before the colon or a `BREAKING CHANGE:` footer.
