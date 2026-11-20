@@ -117,6 +117,15 @@ impl Settings {
         Ok(())
     }
 
+    pub fn use_text_model(&mut self, store: &ModelStore, id: String) -> Result<(), String> {
+        if self.resolve_model(store, &id)?.0 != ModelKind::Text {
+            return Err("Для обработки нужна текстовая модель.".into());
+        }
+        self.text = id;
+        self.mode = Mode::Local;
+        Ok(())
+    }
+
     pub fn selected_path(&self, store: &ModelStore, kind: ModelKind) -> Result<PathBuf, String> {
         let id = match kind {
             ModelKind::Speech => &self.speech,

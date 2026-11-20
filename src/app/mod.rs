@@ -264,6 +264,7 @@ impl Backend {
                 .into();
                 return Ok(());
             }
+            Command::UseTextModel(id) => next.use_text_model(&self.downloads.store, id)?,
             Command::SelectModel(id) => next.select_model(&self.downloads.store, id)?,
             Command::ConnectModel { path, text_model } => {
                 let kind = if text_model {

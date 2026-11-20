@@ -1,0 +1,225 @@
+use super::*;
+use gpui_component::menu::PopupMenu;
+
+impl Settings {
+    pub(super) fn model_switcher(&self, p: Palette, cx: &Context<Self>) -> Div {
+        col()
+            .w_full()
+            .flex_shrink_0()
+            .pt(px(10.))
+            .border_t_1()
+            .border_color(p.rule)
+            .child(
+                col()
+                    .w_full()
+                    .rounded(px(8.))
+                    .bg(p.paper)
+                    .border_1()
+                    .border_color(p.rule)
+                    .p(px(3.))
+                    .child(self.model_switch(false, p, cx))
+                    .child(div().mx(px(6.)).h(px(1.)).bg(p.rule))
+                    .child(self.model_switch(true, p, cx)),
+            )
+    }
+
+    fn model_switch(
+        &self,
+        processing: bool,
+        p: Palette,
+        cx: &Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let s = &self.snapshot;
+        let local = s
+            .models
+            .iter()
+            .find(|m| m.text_model == processing && matches!(m.state, ModelState::Selected));
+        let local_name = local.map(|m| m.name.as_str()).unwrap_or("Выбрать модель");
+        let (title, value) = if processing {
+            match s.mode {
+                Mode::Off => ("Обработка".to_owned(), "Выключена"),
+                Mode::Local => ("Обработка · файл".into(), local_name),
+                Mode::Server => (
+                    "Обработка · сервер".into(),
+                    if s.server_model.is_empty() {
+                        "Выбрать модель"
+                    } else {
+                        &s.server_model
+                    },
+                ),
+                Mode::Cloud => (format!("Облако · {}", s.provider), s.cloud_model.as_str()),
+            }
+        } else {
+            ("Распознавание".into(), local_name)
+        };
+        let display = if local.is_some_and(|m| m.local_path.is_some())
+            && (!processing || s.mode == Mode::Local)
+        {
+            value
+                .strip_suffix(".bin")
+                .or_else(|| value.strip_suffix(".gguf"))
+                .unwrap_or(value)
+        } else {
+            value
+        };
+        let owner = cx.entity().downgrade();
+        Button::new(if processing {
+            "quick-processing"
+        } else {
+            "quick-speech"
+        })
+        .ghost()
+        .w_full()
+        .h(px(46.))
+        .px(px(6.))
+        .rounded(px(5.))
+        .tooltip(format!("{title} · {value}"))
+        .child(
+            row()
+                // Both rows share the same content width in the fixed-width sidebar.
+                .w(px(132.))
+                .min_w_0()
+                .gap(px(6.))
+                .child(
+                    icon(if processing { "sliders" } else { "mic" }, p.muted, 14.).flex_shrink_0(),
+                )
+                .child(
+                    col()
+                        .min_w_0()
+                        .flex_1()
+                        .gap(px(1.))
+                        .child(text(title, 10., p.muted).truncate())
+                        .child(
+                            text(display.to_owned(), 12., p.ink)
+                                .font_weight(FontWeight::MEDIUM)
+                                .truncate(),
+                        ),
+                )
+                .child(icon("chevron", p.muted, 12.).flex_shrink_0()),
+        )
+        .dropdown_menu_with_anchor(Corner::BottomLeft, move |menu, _, cx| {
+            let Some(view) = owner.upgrade() else {
+                return menu;
+            };
+            view.read(cx).model_menu(menu, processing, &owner)
+        })
+    }
+
+    fn model_menu(
+        &self,
+        mut menu: PopupMenu,
+        processing: bool,
+        owner: &WeakEntity<Self>,
+    ) -> PopupMenu {
+        let s = &self.snapshot;
+        menu = menu.min_w(px(212.)).max_w(px(380.)).scrollable(true);
+        if processing {
+            let engine = self.engine.clone();
+            menu = menu.item(
+                PopupMenuItem::new("Без обработки")
+                    .checked(s.mode == Mode::Off)
+                    .on_click(move |_, _, _| {
+                        engine.borrow_mut().dispatch(Command::SetMode(Mode::Off))
+                    }),
+            );
+            match s.mode {
+                Mode::Server if !s.server_models.is_empty() => {
+                    menu = menu.label("Локальный сервер");
+                    for name in &s.server_models {
+                        menu = menu.item(self.model_choice(
+                            name,
+                            name,
+                            name == &s.server_model,
+                            Command::SetServerModel,
+                        ));
+                    }
+                }
+                Mode::Cloud => {
+                    menu = menu.label(format!("Облако · {}", s.provider));
+                    for name in self.cloud_provider().models() {
+                        menu = menu.item(self.model_choice(
+                            name,
+                            name,
+                            *name == s.cloud_model,
+                            Command::SetCloudModel,
+                        ));
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut models = s
+            .models
+            .iter()
+            .filter(|m| {
+                m.text_model == processing
+                    && matches!(m.state, ModelState::Selected | ModelState::Installed)
+            })
+            .peekable();
+        if models.peek().is_some() {
+            menu = menu.label(if processing {
+                "Текстовые модели на Mac"
+            } else {
+                "Речевые модели на Mac"
+            });
+            for m in models {
+                let selected = matches!(m.state, ModelState::Selected)
+                    && (!processing || s.mode == Mode::Local);
+                menu = menu.item(self.model_choice(
+                    &m.name,
+                    &m.id,
+                    selected,
+                    if processing {
+                        Command::UseTextModel
+                    } else {
+                        Command::SelectModel
+                    },
+                ));
+            }
+        }
+        if !menu.is_empty() {
+            menu = menu.separator();
+        }
+        let catalog = owner.clone();
+        menu = menu.item(
+            PopupMenuItem::new(if processing {
+                "Каталог текстовых моделей…"
+            } else {
+                "Каталог речевых моделей…"
+            })
+            .on_click(move |_, window, cx| {
+                let _ = catalog.update(cx, |view, cx| {
+                    view.text_models = processing;
+                    view.file_dialog_error = None;
+                    view.navigate(Page::Models, window, cx);
+                });
+            }),
+        );
+        if processing {
+            let owner = owner.clone();
+            menu = menu.item(PopupMenuItem::new("Настройки обработки…").on_click(
+                move |_, window, cx| {
+                    let _ =
+                        owner.update(cx, |view, cx| view.navigate(Page::Processing, window, cx));
+                },
+            ));
+        }
+        menu
+    }
+
+    fn model_choice(
+        &self,
+        title: &str,
+        value: &str,
+        checked: bool,
+        command: fn(String) -> Command,
+    ) -> PopupMenuItem {
+        let engine = self.engine.clone();
+        let value = value.to_owned();
+        PopupMenuItem::new(title.to_owned())
+            .checked(checked)
+            .on_click(move |_, _, _| {
+                engine.borrow_mut().dispatch(command(value.clone()));
+            })
+    }
+}

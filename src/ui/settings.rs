@@ -1,4 +1,5 @@
 mod dictation;
+mod model_switcher;
 mod models;
 mod processing;
 
@@ -332,11 +333,6 @@ impl Settings {
     }
 
     fn sidebar(&self, p: Palette, cx: &mut Context<Self>) -> Div {
-        let speech = self
-            .snapshot
-            .models
-            .iter()
-            .find(|m| !m.text_model && matches!(m.state, ModelState::Selected));
         col()
             .w(px(176.))
             .h_full()
@@ -378,47 +374,7 @@ impl Settings {
                 }),
             )
             .child(div().flex_1())
-            .when(
-                self.page == Page::Processing || (self.page == Page::Models && self.text_models),
-                |d| {
-                    d.child(
-                        col()
-                            .mx(px(6.))
-                            .pt_3()
-                            .border_t_1()
-                            .border_color(p.rule)
-                            .child(text("Речевая модель", 11., p.muted))
-                            .child(
-                                Button::new("current-speech")
-                                    .ghost()
-                                    .small()
-                                    .justify_start()
-                                    .w_full()
-                                    .px_0()
-                                    .child(
-                                        row()
-                                            .w_full()
-                                            .min_w_0()
-                                            .justify_between()
-                                            .child(
-                                                text(
-                                                    speech
-                                                        .map(|m| m.name.clone())
-                                                        .unwrap_or_else(|| "Выбрать модель".into()),
-                                                    12.,
-                                                    p.accent,
-                                                )
-                                                .truncate(),
-                                            )
-                                            .child(icon("arrow", p.accent, 13.)),
-                                    )
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.show_dictation_setup(true, window, cx)
-                                    })),
-                            ),
-                    )
-                },
-            )
+            .child(self.model_switcher(p, cx))
     }
 
     fn setting(p: Palette, title: &str, detail: &str, control: impl IntoElement) -> Div {
@@ -568,7 +524,9 @@ impl Render for Settings {
                                 "settings-{}",
                                 self.page.title()
                             )))
-                            .size_full()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
                             .overflow_y_scroll()
                             .px(px(28.))
                             .py(px(20.))

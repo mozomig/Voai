@@ -118,13 +118,17 @@ impl Settings {
             )
     }
 
-    fn cloud_processor(&self, p: Palette, cx: &Context<Self>) -> Div {
-        let s = &self.snapshot;
-        let provider = if s.provider == "Anthropic" {
+    pub(super) fn cloud_provider(&self) -> voai_models::Provider {
+        if self.snapshot.provider == "Anthropic" {
             voai_models::Provider::Anthropic
         } else {
             voai_models::Provider::OpenAI
-        };
+        }
+    }
+
+    fn cloud_processor(&self, p: Palette, cx: &Context<Self>) -> Div {
+        let s = &self.snapshot;
+        let provider = self.cloud_provider();
         col()
             .mt_2()
             .child(Self::setting(

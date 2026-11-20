@@ -90,6 +90,7 @@ pub enum Command {
     Download(String),
     CancelDownload(String),
     SelectModel(String),
+    UseTextModel(String),
     ConnectModel {
         path: std::path::PathBuf,
         text_model: bool,
