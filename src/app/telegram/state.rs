@@ -4,11 +4,10 @@ use security_framework::passwords::{
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, fs, io, path::Path, time::SystemTime};
 use uuid::Uuid;
+use voai_l10n::tr;
 use zeroize::Zeroizing;
 
 const SERVICE: &str = "Voai.Telegram";
-const STORE_ERROR: &str = "Не удалось сохранить настройки Telegram на Mac.";
-const KEY_ERROR: &str = "Не удалось открыть токен в Связке ключей.";
 
 #[derive(Serialize, Deserialize)]
 pub(super) struct PendingReply {
@@ -47,17 +46,21 @@ impl State {
         match fs::read(path) {
             Ok(data) => serde_json::from_slice(&data)
                 .map(Some)
-                .map_err(|_| "Не удалось прочитать настройки Telegram.".into()),
+                .map_err(|_| tr("app.telegram.read_settings").into()),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(_) => Err("Не удалось открыть настройки Telegram.".into()),
+            Err(_) => Err(tr("app.telegram.open_settings").into()),
         }
     }
     pub fn save(&self, path: &Path) -> Result<(), String> {
-        let mut file = tempfile::NamedTempFile::new_in(path.parent().ok_or(STORE_ERROR)?)
-            .map_err(|_| STORE_ERROR)?;
-        serde_json::to_writer(&mut file, self).map_err(|_| STORE_ERROR)?;
-        file.as_file().sync_all().map_err(|_| STORE_ERROR)?;
-        file.persist(path).map_err(|_| STORE_ERROR)?;
+        let mut file =
+            tempfile::NamedTempFile::new_in(path.parent().ok_or(tr("app.telegram.save_settings"))?)
+                .map_err(|_| tr("app.telegram.save_settings"))?;
+        serde_json::to_writer(&mut file, self).map_err(|_| tr("app.telegram.save_settings"))?;
+        file.as_file()
+            .sync_all()
+            .map_err(|_| tr("app.telegram.save_settings"))?;
+        file.persist(path)
+            .map_err(|_| tr("app.telegram.save_settings"))?;
         Ok(())
     }
     pub fn offset(&self, now: u64) -> i64 {
@@ -73,21 +76,25 @@ impl State {
         self.next_update = update.saturating_add(1);
     }
     pub fn token(&self) -> Result<Zeroizing<String>, String> {
-        let key =
-            Zeroizing::new(get_generic_password(SERVICE, &self.account).map_err(|_| KEY_ERROR)?);
+        let key = Zeroizing::new(
+            get_generic_password(SERVICE, &self.account)
+                .map_err(|_| tr("app.telegram.read_key"))?,
+        );
         Ok(Zeroizing::new(
-            std::str::from_utf8(&key).map_err(|_| KEY_ERROR)?.to_owned(),
+            std::str::from_utf8(&key)
+                .map_err(|_| tr("app.telegram.read_key"))?
+                .to_owned(),
         ))
     }
     pub fn set_token(&self, token: &str) -> Result<(), String> {
         set_generic_password(SERVICE, &self.account, token.as_bytes())
-            .map_err(|_| "Не удалось сохранить токен в Связке ключей.".into())
+            .map_err(|_| tr("app.telegram.save_token").into())
     }
     pub fn forget(&self) -> Result<(), String> {
         match delete_generic_password(SERVICE, &self.account) {
             Ok(()) => Ok(()),
             Err(e) if e.code() == -25300 => Ok(()),
-            Err(_) => Err("Не удалось удалить токен из Связки ключей.".into()),
+            Err(_) => Err(tr("app.telegram.delete_token").into()),
         }
     }
 }

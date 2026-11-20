@@ -14,6 +14,7 @@ use std::{
     num::NonZeroU32,
     path::Path,
 };
+use voai_l10n::tr;
 
 fn edit(
     backend: &LlamaBackend,
@@ -36,7 +37,7 @@ fn edit(
     }
     ensure!(
         !tokens.is_empty() && tokens.len() + 64 < CONTEXT as usize,
-        "Фраза превышает контекст модели"
+        tr("text.context.input")
     );
     let mut ctx = model.new_context(
         backend,
@@ -68,17 +69,14 @@ fn edit(
         ctx.decode(&mut batch)?;
         pos += 1;
     }
-    anyhow::bail!("Модель исчерпала контекст до завершения ответа")
+    anyhow::bail!(tr("text.context.output"))
 }
 
 fn read_message(input: &mut impl Read, max_bytes: usize) -> Result<String> {
     let mut header = [0; 4];
     input.read_exact(&mut header)?;
     let len = u32::from_be_bytes(header) as usize;
-    ensure!(
-        (1..=max_bytes).contains(&len),
-        "Сообщение пусто или слишком велико"
-    );
+    ensure!((1..=max_bytes).contains(&len), tr("text.message.size"));
     let mut data = vec![0; len];
     input.read_exact(&mut data)?;
     Ok(String::from_utf8(data)?)
@@ -112,14 +110,14 @@ fn validate_model(path: &Path) -> Result<()> {
 
 fn main() -> Result<()> {
     let mut args = std::env::args_os().skip(1);
-    let operation = args.next().context("Не задан режим работы движка")?;
-    let path = args.next().context("Укажите путь к GGUF модели")?;
+    let operation = args.next().context(tr("text.mode.missing"))?;
+    let path = args.next().context(tr("text.path.missing"))?;
     if operation == "--validate-model-v1" {
         return validate_model(Path::new(&path));
     }
     ensure!(
         operation == "--edit-v2" || operation == "--edit-lines-v1",
-        "Неподдерживаемая версия протокола"
+        tr("text.protocol")
     );
     let mut stdin = io::stdin().lock();
     let instruction = read_message(&mut stdin, 8192)?;
@@ -143,7 +141,7 @@ fn main() -> Result<()> {
         for index in 0..count {
             let input = read_message(&mut stdin, 120_000)?;
             let text = edit(&backend, &model, &instruction, input)?;
-            ensure!(!text.trim().is_empty(), "Пустой результат обработки");
+            ensure!(!text.trim().is_empty(), tr("text.output.empty"));
             serde_json::to_writer(
                 &mut out,
                 &serde_json::json!({"edited":{"index":index,"text":text.trim()}}),
@@ -158,7 +156,7 @@ fn main() -> Result<()> {
     watch_parent();
     let (backend, model) = load()?;
     let text = edit(&backend, &model, &instruction, transcript)?;
-    ensure!(!text.trim().is_empty(), "Пустой результат обработки");
+    ensure!(!text.trim().is_empty(), tr("text.output.empty"));
     io::stdout().lock().write_all(text.trim().as_bytes())?;
     Ok(())
 }

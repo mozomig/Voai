@@ -1,5 +1,6 @@
 use super::*;
 use crate::app::FileCommand;
+use voai_l10n::{tf, tr};
 
 type ModelCommand = fn(String) -> Command;
 
@@ -17,9 +18,9 @@ impl Settings {
                     .child(self.tabs(
                         p,
                         &[
-                            ("Речь", self.model_tab == ModelTab::Speech),
-                            ("Текст", self.model_tab == ModelTab::Text),
-                            ("Спикеры", speakers),
+                            (tr("ui.models.speech"), self.model_tab == ModelTab::Speech),
+                            (tr("ui.models.text"), self.model_tab == ModelTab::Text),
+                            (tr("ui.files.speakers"), speakers),
                         ],
                         move |this, i, cx| {
                             this.model_tab = tabs[i];
@@ -32,11 +33,11 @@ impl Settings {
                         primary_button(
                             "attach-model",
                             if speakers {
-                                "Подключить папку…"
+                                tr("ui.model.link_folder")
                             } else if s.connecting_model {
-                                "Проверяю файл…"
+                                tr("ui.model.checking")
                             } else {
-                                "Подключить файл…"
+                                tr("ui.model.link_file")
                             },
                             p,
                         )
@@ -50,8 +51,7 @@ impl Settings {
             )
             .children(
                 self.file_dialog_error
-                    .as_ref()
-                    .map(|message| text(message.clone(), 12., p.error).mt_2()),
+                    .map(|key| text(tr(key), 12., p.error).mt_2()),
             );
         if speakers {
             page = page.child(self.voice_models(p, cx));
@@ -69,10 +69,10 @@ impl Settings {
             .map(|m| m.on_disk)
             .sum();
         page.when(local.clone().next().is_some(), |d| {
-            d.child(group_title("Подключённые файлы", p))
+            d.child(group_title(tr("ui.model.linked_files"), p))
                 .children(local.map(|m| self.model_row(m, p, cx)))
         })
-        .child(group_title("Каталог", p))
+        .child(group_title(tr("ui.model.catalogue"), p))
         .children(
             s.models
                 .iter()
@@ -86,7 +86,7 @@ impl Settings {
                     .gap_2()
                     .child(icon("disk", p.muted, 14.))
                     .child(text(
-                        format!("На диске · {}", bytes(occupied)),
+                        tf!("ui.models.disk", size = bytes(occupied)),
                         12.,
                         p.muted,
                     )),
@@ -104,9 +104,9 @@ impl Settings {
             multiple: false,
             prompt: Some(
                 match tab {
-                    ModelTab::Speech => "Выбрать файл Whisper",
-                    ModelTab::Text => "Выбрать файл GGUF",
-                    ModelTab::Speakers => "Подключить папку",
+                    ModelTab::Speech => tr("ui.model.whisper_file"),
+                    ModelTab::Text => tr("ui.model.gguf_file"),
+                    ModelTab::Speakers => tr("ui.model.choose_folder"),
                 }
                 .into(),
             ),
@@ -128,10 +128,7 @@ impl Settings {
                         }
                     }
                     Ok(Ok(None)) => {}
-                    _ => {
-                        view.file_dialog_error =
-                            Some("Не удалось открыть окно выбора файла.".into())
-                    }
+                    _ => view.file_dialog_error = Some("ui.dialog.open_failed"),
                 }
                 cx.notify();
             });
@@ -144,11 +141,11 @@ impl Settings {
         let busy = files.progress.is_some();
         let selected = files.voices_downloaded && !files.using_local_voices && files.voices_ready;
         let action = if selected {
-            "Выбрано"
+            tr("ui.model.chosen")
         } else if files.voices_downloaded {
-            "Выбрать"
+            tr("ui.action.select")
         } else {
-            "Скачать"
+            tr("ui.model.download")
         };
         let download = button("download-speakers", action, p)
             .disabled(selected || busy)
@@ -160,22 +157,28 @@ impl Settings {
                 };
                 this.send(Command::File(choice));
             }));
-        let mut panel = col().gap_1()
-            .child(group_title("Определение спикеров", p))
-            .child(Self::setting(p, "Pyannote 3.0 + CAM++", "31,1 МБ · Разделяет реплики по голосам", download))
-            .child(text("Свой комплект sherpa-onnx можно подключить из папки с файлами segmentation.onnx и embedding.onnx.", 12., p.muted).mt_2());
+        let mut panel = col()
+            .gap_1()
+            .child(group_title(tr("ui.models.diarization"), p))
+            .child(Self::setting(
+                p,
+                "Pyannote 3.0 + CAM++",
+                tr("ui.models.diarization_size"),
+                download,
+            ))
+            .child(text(tr("ui.models.diarization_files"), 12., p.muted).mt_2());
         if let Some(path) = &files.voices_local {
             let active = files.using_local_voices && files.voices_ready;
             panel = panel.child(Self::setting(
                 p,
-                "Подключённая папка",
+                tr("ui.model.linked_folder"),
                 &path.to_string_lossy(),
                 button(
                     "use-local-speakers",
                     if active {
-                        "Выбрано"
+                        tr("ui.model.chosen")
                     } else {
-                        "Выбрать"
+                        tr("ui.action.select")
                     },
                     p,
                 )
@@ -228,18 +231,18 @@ impl Settings {
                     row()
                         .gap_1()
                         .child(icon("check", p.accent, 14.))
-                        .child(text("Выбрана", 12., p.accent)),
+                        .child(text(tr("ui.model.selected"), 12., p.accent)),
                 )
             }
-            ModelState::Available => action = Some(("Скачать", Command::Download)),
-            ModelState::Installed => action = Some(("Выбрать", Command::SelectModel)),
+            ModelState::Available => action = Some((tr("ui.model.download"), Command::Download)),
+            ModelState::Installed => action = Some((tr("ui.action.select"), Command::SelectModel)),
             ModelState::Failed(reason) => {
                 details = details.child(text(reason.clone(), 12., p.error));
                 action = Some((
                     if m.on_disk > 0 {
-                        "Продолжить"
+                        tr("ui.model.resume")
                     } else {
-                        "Повторить"
+                        tr("ui.action.retry")
                     },
                     Command::Download,
                 ));
@@ -252,16 +255,16 @@ impl Settings {
                 details = details
                     .child(div().pt_1().child(track(fraction, p)))
                     .child(text(
-                        format!(
-                            "{} из {} · {:.0}%",
-                            bytes(*received),
-                            bytes(m.bytes),
-                            100. * fraction
+                        tf!(
+                            "ui.model.download_progress",
+                            received = bytes(*received),
+                            total = bytes(m.bytes),
+                            percent = format!("{:.0}", 100. * fraction)
                         ),
                         11.,
                         p.muted,
                     ));
-                action = Some(("Отменить", Command::CancelDownload));
+                action = Some((tr("ui.action.cancel_progress"), Command::CancelDownload));
             }
         }
         if local
@@ -289,7 +292,7 @@ impl Settings {
                 Button::new(SharedString::from(format!("unlink-{id}")))
                     .ghost()
                     .small()
-                    .label("Отключить")
+                    .label(tr("ui.action.disconnect"))
                     .text_color(p.muted)
                     .on_click(cx.listener(move |this, _, _, _| {
                         this.send(Command::DisconnectModel(id.clone()))

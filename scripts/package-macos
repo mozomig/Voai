@@ -27,6 +27,7 @@ if [[ -n "$repo" ]]; then
     public_key="${VOAI_SPARKLE_PUBLIC_KEY:-$(cat packaging/sparkle-public-key.txt)}"
     plutil -insert SUPublicEDKey -string "$public_key" "$app/Contents/Info.plist"
 fi
+cp -R packaging/en.lproj packaging/ru.lproj "$app/Contents/Resources/"
 cp packaging/Voai.icns "$app/Contents/Resources/Voai.icns"
 cp -R packaging/licenses "$app/Contents/Resources/Licenses"
 cp "$sparkle/LICENSE" "$app/Contents/Resources/Licenses/Sparkle-LICENSE"

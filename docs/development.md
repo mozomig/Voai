@@ -1,12 +1,12 @@
-# Сборка и выпуск Voai
+# Building and releasing Voai
 
-Voai написана на Rust 2024. Окно настроек и виджет диктовки используют GPUI. Как связаны интерфейс, речевой процесс и обработчики файлов, описано в [архитектуре проекта](../ARCHITECTURE.md). В репозитории также сохранился [первый макет интерфейса](../design/index.html).
+Voai uses Rust 2024 and GPUI. The main process owns the settings window, floating dictation panel and macOS integration. Speech recognition and local text editing run in bundled helpers. [Architecture](../ARCHITECTURE.md) · [Original interface prototype](../design/index.html)
 
-Выполняйте команды из корня репозитория.
+Run the commands below from the repository root.
 
-## Сборка и проверка
+## Build and test
 
-Сборка рассчитана на Apple Silicon. Нужны полный Xcode с SDK macOS и компилятором Metal, CMake и нативный стабильный Rust с поддержкой edition 2024. На Mac, где установлен только Intel Rust через rustup, добавьте нативный toolchain командой `rustup toolchain install stable-aarch64-apple-darwin --force-non-host`. Сценарий сборки сам выбирает нативный компилятор и libclang из Xcode.
+Use an Apple Silicon Mac with Xcode, the macOS SDK and Metal compiler, CMake, and a stable arm64 Rust toolchain with 2024 edition support. If rustup only has an Intel toolchain installed, run `rustup toolchain install stable-aarch64-apple-darwin --force-non-host`. The build wrapper selects the native compiler and Xcode's libclang.
 
 ```sh
 ./scripts/cargo-macos test --workspace --locked
@@ -17,35 +17,61 @@ Voai написана на Rust 2024. Окно настроек и виджет 
 open target/dist/release/Voai.app
 ```
 
-Файловый режим можно проверить на синтетическом часовом видео с помощью `python3 tests/macos/file_transcription.py target/dist/release/Voai.app /путь/к/Whisper-Small.bin`. Для этого теста нужны ffmpeg и системный голос Milena. Для проверки всего конвейера на собственной записи укажите абсолютные пути в `VOAI_FILE_QA_APP`, `VOAI_FILE_QA_MEDIA`, `VOAI_FILE_QA_WHISPER` и, по желанию, `VOAI_FILE_QA_VOICES` и `VOAI_FILE_QA_EDITOR`. Запустите `./scripts/cargo-macos test -p voai imports_media_with_packaged_workers -- --ignored --nocapture`. Тест сохраняет результат во временной библиотеке и выводит только этапы, длительность и счётчики. Замеры качества спикеров, памяти и условия сравнения приведены в [отчёте по диаризации](../tests/macos/diarization.md).
+For a quicker build with debug symbols, use `./scripts/package-macos debug`.
 
-Для быстрой сборки с отладочными символами используйте `./scripts/package-macos debug`. Проверить только интеграцию с текстовым полем можно командой `Voai.app/Contents/MacOS/voai probe-input`. Она заменяет выделение тестовой фразой через шесть секунд после запуска, если выбранное поле поддерживает ввод.
+### Dictation and insertion
 
-В интерактивном сеансе macOS можно проверить ввод из собранного приложения в одноразовое окно AppKit и поле WebKit. Тест проверяет замену выделения, смену поля и позиции курсора, защищённый ввод и счётчик изменений буфера обмена. Во время проверки тестовое окно должно оставаться активным.
+To try insertion by itself, run `target/dist/release/Voai.app/Contents/MacOS/voai probe-input` and select text in a compatible field during the countdown. The probe replaces the selection with a test phrase.
+
+For an interactive AppKit and WebKit test, run the following command and keep its temporary test window active. It checks replacing a selection, changing the field or cursor position, rejecting secure fields and preserving the pasteboard change count.
 
 ```sh
 swift tests/macos/input.swift "$PWD/target/dist/release/Voai.app/Contents/MacOS/voai"
 ```
 
-Отдельный тест запускает установленный Google Chrome с временным профилем и проверяет результат в DOM. Команда для него — `python3 tests/macos/chromium.py "$PWD/target/dist/release/Voai.app/Contents/MacOS/voai"`.
+The Chrome test launches the installed Google Chrome with a temporary profile and checks the DOM after insertion.
 
-Для проверки распознавания на собственной записи используйте `crates/voai-speech/tests/worker_smoke.py`. Она принимает путь к исполняемому файлу, весам Whisper, WAV (16 кГц, моно, PCM16), код языка и ожидаемый фрагмент фразы.
+```sh
+python3 tests/macos/chromium.py "$PWD/target/dist/release/Voai.app/Contents/MacOS/voai"
+```
 
-Для сквозного теста без микрофона запустите `python3 tests/macos/dictation.py target/dist/release/Voai.app tiny.bin Qwen.gguf ru.wav`. Скрипт проверяет черновик до отпускания клавиш, финальную расшифровку, перевод по заданной инструкции, доставку в обработчик пробного поля, отмену второй фразы и сохранение принятой речи при остановке аудиопотока. В начале [скрипта](../tests/macos/dictation.py) есть команда для синтеза тестовой записи.
+Use `crates/voai-speech/tests/worker_smoke.py` to check recognition on a recording. It takes the executable, Whisper weights, a mono 16 kHz PCM16 WAV, a language code and an expected phrase.
 
-Для локальной разработки выберите свой сертификат Apple Development из вывода `security find-identity -v -p codesigning` и сохраните его отпечаток командой `git config --local voai.signingIdentity ОТПЕЧАТОК`. У следующих сборок сохранится идентичность приложения для разрешений macOS. Без выбранного сертификата сценарий использует ad hoc, и разрешение может устареть при пересборке.
+The dictation acceptance test uses a synthetic recording in place of a microphone. It checks live drafts, recognition on key release, translation with the supplied prompt, delivery to the test field, cancellation and recovery of captured audio when input stalls. The script includes commands for synthesizing the Russian fixture. [Dictation test](../tests/macos/dictation.py)
 
-При переходе с ad hoc на сертификат удалите прежнюю запись Voai в **Системные настройки → Конфиденциальность и безопасность → Универсальный доступ** и добавьте актуальную `Voai.app` кнопкой **+**. macOS отдельно управляет доступом к микрофону. Для распространения задайте переменную `VOAI_SIGN_IDENTITY` с именем сертификата Developer ID Application. Передача профиля Keychain в `VOAI_NOTARY_PROFILE` включает отправку в Apple, ожидание нотарификации и прикрепление билета. Архив и пакет появляются рядом в `target/dist/release/`.
+```sh
+python3 tests/macos/dictation.py target/dist/release/Voai.app tiny.bin Qwen.gguf ru.wav
+```
 
-## Подготовка публичного релиза
+### File transcription
 
-При первом клонировании скопируйте свой адрес `@users.noreply.github.com` из **GitHub → Settings → Emails** и выполните `./scripts/git-email setup ВАШ_АДРЕС`. Команда задаёт почту только для этого репозитория и подключает хуки. Перед коммитом Git проверит адреса автора и коммитера, перед пушем — историю отправляемых веток и авторство тегов.
+To test a synthetic hour-long video, run the following command with ffmpeg and the Milena system voice installed.
 
-Сборка берёт адрес репозитория из GitHub-remote `origin`. Для отдельного репозитория релизов задайте `VOAI_RELEASE_REPOSITORY=owner/repo`. Без адреса обычная локальная сборка запускается с отключённой проверкой обновлений.
+```sh
+python3 tests/macos/file_transcription.py target/dist/release/Voai.app /path/to/Whisper-Small.bin
+```
 
-1. Увеличьте версию workspace и обновите `Cargo.lock`. В `packaging/Info.plist` задайте ту же версию и увеличьте `CFBundleVersion`. Sparkle сравнивает номера сборок.
-2. На Mac для выпуска нужен сертификат **Developer ID Application**, профиль `notarytool` и ключ Sparkle в Связке ключей. Официальный публичный ключ находится в `packaging/sparkle-public-key.txt`. Закрытый ключ хранится в аккаунте Sparkle `app.voai.desktop`. Для своего форка создайте отдельный ключ через `"$(./scripts/sparkle-macos)/bin/generate_keys" --account ИМЯ`, задайте `VOAI_SPARKLE_ACCOUNT` и `VOAI_SPARKLE_PUBLIC_KEY`.
-3. Запустите сборку. Для описания изменений можно передать путь к Markdown-файлу в `VOAI_RELEASE_NOTES`.
+To test the complete pipeline on your own recording, set absolute paths in `VOAI_FILE_QA_APP`, `VOAI_FILE_QA_MEDIA` and `VOAI_FILE_QA_WHISPER`. Optionally set `VOAI_FILE_QA_VOICES` and `VOAI_FILE_QA_EDITOR`. The test writes to a temporary library and reports stages, elapsed time and counts. Speaker-identification results and memory measurements are in the [diarization evaluation](../tests/macos/diarization.md).
+
+```sh
+./scripts/cargo-macos test -p voai imports_media_with_packaged_workers -- --ignored --nocapture
+```
+
+### Signing local builds
+
+Print the available identities with `security find-identity -v -p codesigning`. Pick an Apple Development certificate, then run `git config --local voai.signingIdentity FINGERPRINT`. Reusing the identity helps macOS recognize subsequent builds when checking permissions. Without an identity the script uses ad hoc signing, and a rebuild may need new permission grants.
+
+When switching from ad hoc signing to a certificate, remove the old Voai entry from **System Settings → Privacy & Security → Accessibility**. Add the freshly signed app with **+**. macOS manages microphone access separately.
+
+## Publish a release
+
+On a new clone, copy your GitHub noreply address from **GitHub → Settings → Emails** and run `./scripts/git-email setup YOUR_NOREPLY_ADDRESS`. This sets the address for the current checkout and enables the commit and push hooks. The hooks check author, committer and annotated tagger addresses in the history being published.
+
+The update feed uses the repository from the GitHub `origin` remote. For a separate release repository, set `VOAI_RELEASE_REPOSITORY=owner/repo`. A local build with no repository configured skips update checks.
+
+1. Bump the workspace version, update `Cargo.lock`, set the same short version in `packaging/Info.plist`, and increment `CFBundleVersion`. Sparkle uses the build number to compare releases.
+2. Set up a **Developer ID Application** certificate, a `notarytool` Keychain profile and the Sparkle signing key on the release Mac. The public key is in `packaging/sparkle-public-key.txt`. The private key is stored in Keychain under the Sparkle account `app.voai.desktop`. For a fork, generate a key with `"$(./scripts/sparkle-macos)/bin/generate_keys" --account YOUR_ACCOUNT` and set `VOAI_SPARKLE_ACCOUNT` and `VOAI_SPARKLE_PUBLIC_KEY`.
+3. Run the release script with your signing identity and notary profile. Optionally set `VOAI_RELEASE_NOTES` to a Markdown file. The script submits the app and DMG for notarization, staples the tickets and verifies the packages.
 
 ```sh
 VOAI_SIGN_IDENTITY='Developer ID Application: …' \
@@ -53,6 +79,6 @@ VOAI_NOTARY_PROFILE='voai-notary' \
 ./scripts/release-macos
 ```
 
-4. Создайте черновик GitHub Release с тегом `v<версия>`. Из `target/dist/v<версия>/` приложите **Voai-<версия>-arm64.dmg**, **Voai.zip** и **appcast.xml**, затем опубликуйте как **Latest**. Sparkle загружает подписанную ленту по постоянному адресу `releases/latest/download/appcast.xml`, а DMG — по ссылке на конкретный тег. При замене DMG соберите подписи и ленту заново.
+4. Create a draft GitHub Release tagged `v<version>`. Attach `Voai-<version>-arm64.dmg`, `Voai.zip` and `appcast.xml` from `target/dist/v<version>/`. Publish it as **Latest**. Sparkle checks `releases/latest/download/appcast.xml`, then downloads the DMG from the versioned tag. If the DMG changes, regenerate the signatures and feed.
 
-Для локальной репетиции с сертификатом разработки доступны `./scripts/package-macos`, `./scripts/make-appcast` и `./scripts/verify-macos-release путь/к/образу.dmg`. Скрипты подготовки оставляют файлы на Mac. [Документация Sparkle](https://sparkle-project.org/documentation/publishing/)
+For a local rehearsal with a development certificate, run `./scripts/package-macos`, `./scripts/make-appcast` and `./scripts/verify-macos-release path/to/image.dmg`. The artifacts are written to `target/dist/release/`. [Publishing with Sparkle](https://sparkle-project.org/documentation/publishing/)

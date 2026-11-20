@@ -9,6 +9,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use voai_l10n::tr;
 
 struct Worker(Child);
 impl Drop for Worker {
@@ -40,24 +41,17 @@ fn run_local(
     check_cancelled(cancel)?;
     let mut child = Worker(
         Command::new(helper)
+            .env(voai_l10n::WORKER_LANGUAGE_ENV, voai_l10n::language())
             .arg("--edit-v2")
             .arg(model_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .context("Не удалось запустить локальный движок Voai")?,
+            .context(tr("editor.start"))?,
     );
-    let mut stdin = child
-        .0
-        .stdin
-        .take()
-        .context("Не удалось открыть ввод движка")?;
-    let stdout = child
-        .0
-        .stdout
-        .take()
-        .context("Не удалось открыть вывод движка")?;
+    let mut stdin = child.0.stdin.take().context(tr("editor.stdin"))?;
+    let stdout = child.0.stdout.take().context(tr("editor.stdout"))?;
     let deadline = Instant::now() + Duration::from_secs(120);
     thread::scope(|scope| -> Result<String> {
         // stdin stays open in the parent after the request. EOF signals process exit to the helper.
@@ -81,11 +75,11 @@ fn run_local(
                 let _ = child.0.kill();
                 let _ = child.0.wait();
                 check_cancelled(cancel)?;
-                anyhow::bail!("Локальная модель не ответила вовремя");
+                anyhow::bail!(tr("editor.timeout"));
             }
             match child.0.try_wait() {
                 Ok(Some(status)) => {
-                    ensure!(status.success(), "Локальная модель не завершила обработку");
+                    ensure!(status.success(), tr("editor.incomplete"));
                     break;
                 }
                 Ok(None) => thread::sleep(Duration::from_millis(40)),
@@ -97,10 +91,10 @@ fn run_local(
         }
         input
             .join()
-            .map_err(|_| anyhow::anyhow!("Движок прервал ввод"))??;
+            .map_err(|_| anyhow::anyhow!(tr("editor.pipe.input")))??;
         let text = output
             .join()
-            .map_err(|_| anyhow::anyhow!("Движок прервал ответ"))??;
+            .map_err(|_| anyhow::anyhow!(tr("editor.pipe.output")))??;
         check_cancelled(cancel)?;
         edited(&text)
     })
@@ -154,7 +148,7 @@ mod tests {
             let started = Instant::now();
             assert_eq!(
                 job.join().unwrap().unwrap_err().to_string(),
-                "Операция отменена"
+                tr("operation.cancelled")
             );
             assert!(started.elapsed() < Duration::from_secs(5));
         });

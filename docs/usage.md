@@ -1,72 +1,78 @@
-# Настройка Voai
+# Using Voai
 
-## Первая диктовка
+## Your first dictation
 
-1. Откройте **Диктовка** и разрешите микрофон и универсальный доступ. Разрешения выдаются в macOS.
-2. Нажмите **Выбрать модель** в разделе **Диктовка**. В открывшемся каталоге скачайте модель или нажмите **Подключить файл…** и укажите собственную. Выберите подключённую или скачанную модель.
-3. Попробуйте сочетание клавиш в пробном поле, затем в своём редакторе. Чтобы назначить один правый ⌘, нажмите на сочетание в разделе **Диктовка**, затем нажмите и отпустите правый ⌘. Для сочетания с буквой нажмите её до отпускания модификатора.
+1. Open **Dictation** and grant microphone and Accessibility access in macOS.
+2. Pick a speech model. Download one from the catalog or select a Whisper model on disk.
+3. Click the test field, hold **⌥ Space**, speak, then release the keys. Try the same shortcut in your editor. Press **Esc** to cancel.
 
-В **Диктовка → Вид виджета** можно выбрать стандартную панель с текстом или минималистичную капсулу с волной над полем ввода. В большом редакторе капсула появляется у строки с курсором, если редактор сообщает её положение. Если геометрия поля недоступна, ориентиром служит указатель мыши. При ошибке открывается панель с пояснением и действиями.
+To use a different shortcut, click the current one and press the keys you want. For right Command alone, press and release that key. For a letter with modifiers, press the letter while still holding the modifiers.
 
-При громком фоновом шуме включите **Диктовка → Шумоподавление**. Со следующей диктовки встроенный FastEnhancer-B будет очищать звук для распознавания на этом Mac. В истории сохраняется исходная запись с микрофона. По умолчанию шумоподавление выключено.
+Under **Dictation → Interface language**, choose **System language**, **English** or Russian. System language follows your Mac’s preferred languages and uses English when none are supported. **Spoken language** controls recognition separately.
 
-Внизу боковой панели на любой вкладке можно сменить речевую модель и модель обработки. Выбор текстового файла в этом меню сразу включает локальную обработку. Пункт **Без обработки** возвращает прямую диктовку.
+The standard widget shows a live draft. The compact widget shows a waveform near the cursor, or near the mouse pointer when the editor hides the cursor position. If Voai needs your input, it opens the full panel.
 
-Voai вводит текст через Accessibility или Unicode-события macOS, сохраняя содержимое буфера обмена. При смене поля или выделения фраза остаётся в панели. Защищённые поля исключены. Совместимость с конкретным редактором зависит от доступности поля и позиции курсора через системные API.
+Turn on noise suppression to clean up background sound for the next dictation. FastEnhancer-B runs on the Mac before speech recognition. History keeps the original microphone recording. Noise suppression is off by default.
 
-Если VS Code не сообщает положение курсора, проверьте настройку **Editor: Accessibility Support**. Значение `on` включает доступ к тексту редактора. Настройку можно вернуть в `auto`. [Настройки доступности VS Code](https://code.visualstudio.com/docs/configure/accessibility/accessibility#_screen-reader-mode)
+The model selectors at the bottom of the sidebar work on every tab. Choosing a text model there turns on local editing. Turn editing off to insert the raw transcript.
 
-## История диктовки
+## Inserting text
 
-Откройте **История** в боковой панели или **История диктовки** в меню Voai. Здесь можно послушать запись и прочитать расшифровку. Если обработка изменила текст, в карточке видны обе версии. При ошибке обработки остаётся исходный текст.
+Voai uses macOS Accessibility and Unicode events to insert text while preserving the clipboard. If the field or selection changes before insertion, the text stays in the panel. Password fields are excluded. Some editors expose less information about the cursor and selection than others.
 
-Voai хранит последние 20 завершённых диктовок на этом Mac, в `~/Library/Application Support/Voai/History`. Новая запись вытесняет самую старую. В раскрытой карточке кнопка **Удалить** удаляет аудио и текст после подтверждения. Отменённые и пустые диктовки в историю не попадают.
+If Voai cannot locate the cursor in VS Code, set **Editor: Accessibility Support** to `on`. To restore automatic detection, set it back to `auto`. [VS Code accessibility settings](https://code.visualstudio.com/docs/configure/accessibility/accessibility#_screen-reader-mode)
 
-## Расшифровка аудио и видео
+## History
 
-Откройте раздел **Расшифровка**, выберите запись и настройте три этапа.
+Open **History** from the sidebar or the menu bar. Expand an entry to play the recording and read the text. If editing changed the wording, you can compare both versions. The original transcript is available even if the editor failed.
 
-- **Распознавание** — локальная модель Whisper из каталога или собственный файл GGML. Voai читает звуковую дорожку средствами macOS. Видео предварительно конвертировать не нужно.
-- **Спикеры** — можно пропустить этот этап, скачать комплект или подключить папку с совместимыми моделями sherpa-onnx. В ней должны лежать `segmentation.onnx` и `embedding.onnx`.
-- **Обработка текста** — можно сохранить исходный текст Whisper или выбрать локальную GGUF-модель. Она применяет сохранённую инструкцию из раздела **Обработка** к каждой реплике отдельно. Если текст изменился, оригинал остаётся в расшифровке.
+The last 20 completed dictations are stored in `~/Library/Application Support/Voai/History`. Each new entry replaces the oldest once the history is full. Deleting an entry removes its audio and text after confirmation. Empty and cancelled dictations never enter the history.
 
-Во время импорта Voai читает звук частями. Для временной дорожки нужно около 115 МБ свободного места на час записи. Она удаляется после завершения или отмены.
+## Audio and video files
 
-Выбор для файлов сохраняется отдельно от настроек диктовки. После загрузки весов все три этапа работают офлайн. При сбое определения спикеров или редактирования можно пользоваться уже распознанным текстом.
+Open **Transcription** and choose a recording. The file workflow has three settings.
 
-Без определения спикеров результат открывается как текст с абзацами. Кнопка **По фрагментам** открывает таймкоды и прослушивание. Если спикеры определены, результат открывается как диалог. Нажмите на реплику, чтобы послушать её в исходной записи. Можно изменить спикера одной реплики, переименовать его во всём разговоре и экспортировать TXT или субтитры SRT. Чтобы воспроизведение оставалось доступным, сохраните исходный файл на прежнем месте. Библиотека расшифровок находится в `~/Library/Application Support/Voai/Transcripts`.
+| Stage | What to choose |
+| --- | --- |
+| Speech recognition | Select a downloaded Whisper model or a local GGML file. Voai reads the audio track from a video directly. |
+| Speakers | Leave speaker identification off for plain text. To separate speakers, download the model pair or open a folder containing compatible `segmentation.onnx` and `embedding.onnx` files. |
+| Text editing | Keep the Whisper transcript or choose a local GGUF model. The model applies your saved editing instructions to each turn. Changed turns retain their originals. |
 
-## Расшифровка в Telegram
+Voai reads the audio in chunks. Allow about 115 MB of temporary disk space per hour of audio. Voai removes the temporary track when the job finishes or you cancel it. File settings are independent of dictation settings. Once models are downloaded, all three stages run offline. If speaker identification or editing fails, you can still use the recognized text.
 
-1. В настройках Voai откройте **Telegram**. Создайте личного бота командой `/newbot` у [@BotFather](https://t.me/BotFather), вставьте токен в Voai и нажмите **Подключить**.
-2. Нажмите **Привязать аккаунт** в Voai. Откройте ссылку под нужным аккаунтом Telegram и нажмите **Старт**. В настройках Voai появится его Telegram ID.
-3. Перешлите боту голосовое сообщение, кружок, аудио или видео. Ответ придёт в тот же чат. В разделе **Расшифровка** можно выбрать речевую модель и локальную обработку текста.
+Plain transcripts open as paragraphs. Choose **Show timestamps** to inspect segments and play the audio. With speakers enabled, the result opens as a conversation. Click a timestamp to hear a turn, reassign a single turn, or rename someone throughout the transcript. Export to TXT or SRT. Keep the source file in place for playback. Voai stores transcripts in `~/Library/Application Support/Voai/Transcripts`.
 
-Voai принимает записи, пока приложение запущено и Mac подключён к интернету. Для связи с Telegram Voai использует сетевые настройки macOS, включая активный VPN и системный прокси. В обычном режиме достаточно токена. Отдельный локальный SOCKS5 можно указать в **Настройках сети**. Если Telegram временно возвращает серверную ошибку, Voai показывает код и повторяет запрос автоматически. Telegram доставляет файл и ответ. Распознавание выполняется на Mac, временная копия файла удаляется после обработки. Токен хранится в Связке ключей macOS. Бот может скачать файл до 20 МБ. Файл большего размера можно открыть через раздел **Расшифровка**. [Telegram Bot API](https://core.telegram.org/bots/api#getfile)
+## Telegram
 
-Пока Voai скачивает и расшифровывает запись, в чате появляется индикатор «печатает…». При обрыве связи Voai повторяет загрузку. До подтверждения доставки оставшиеся части ответа хранятся на Mac. После перезапуска Voai продолжит отправку. Если Telegram мог принять часть, откройте чат и выберите в настройках **Уже в чате** или **Отправить ещё раз**.
+1. Create a bot with `/newbot` in [@BotFather](https://t.me/BotFather). In Voai, open **Telegram**, enter the token and connect.
+2. Choose **Link account**. Open the link with the Telegram account you want to use and tap **Start**. Voai shows its Telegram ID.
+3. Forward a voice note, video note, audio file or video to the bot. It sends the transcript back to your private chat. To change the speech model or enable local editing, use **Transcription**.
 
-## Собственные модели
+Keep Voai running and your Mac online. Telegram handles the incoming media and reply, and Voai transcribes on the Mac. The temporary file is removed after processing. The bot token is stored in macOS Keychain. The Bot API download limit is 20 MB. For larger recordings, open the file directly in Voai. [Telegram Bot API](https://core.telegram.org/bots/api#getfile)
 
-В разделе **Модели** для речи доступны многоязычные файлы Whisper в формате whisper.cpp GGML (`.bin`), для редактирования — одиночные текстовые модели llama.cpp GGUF с шаблоном чата (`.gguf`). Voai проверяет совместимость в отдельном процессе. Подключение сохраняет ссылку на исходный файл. После перемещения или замены весов подключите файл повторно. Отключение удаляет только ссылку.
+The connection uses your Mac's network settings, including system proxies and an active VPN. You can set a local SOCKS5 port in the Telegram network settings. Voai shows temporary server errors and retries. The bot shows a typing indicator while downloading and transcribing. If a transfer is interrupted, Voai retries the download.
 
-Каталожные веса Voai хранит в `~/Library/Application Support/Voai/Models`. У загрузок есть прогресс, отмена, докачка и проверка SHA-256.
+Unsent reply parts stay on the Mac until delivery is confirmed. Voai resumes after a restart. If Telegram may already have accepted a reply, check the chat and tell Voai whether to mark it delivered or send it again.
 
-## Постобработка
+## Models and editing
 
-| Режим в разделе «Обработка» | Как настроить |
-|---|---|
-| Выкл. | Сразу вводится расшифровка Whisper. |
-| Из файла | Выберите текстовую модель из каталога или подключённый GGUF. Обработку выполняет llama.cpp на этом Mac. |
-| Локальный сервер | Запустите Ollama или сервер LM Studio. Введите базовый адрес, нажмите **Найти модели** и выберите модель. Если сервер требует Bearer-токен, сохраните его для этого адреса. |
-| Облако | Выберите OpenAI или Anthropic, модель и сохраните свой API-ключ. Провайдер получает инструкцию и расшифровку. |
+In **Models**, you can connect multilingual whisper.cpp GGML speech models (`.bin`) and single-file llama.cpp GGUF text models with a chat template (`.gguf`). Voai checks each file in a helper process and saves a reference to its location. Reconnect a file if you move or replace it. Removing the reference leaves your file on disk.
 
-Для Ollama обычно используется `http://127.0.0.1:11434/v1`, для LM Studio — `http://127.0.0.1:1234/v1`. В режиме локального сервера Voai подключается только к loopback на этом Mac. Для полностью офлайн-работы выберите в самом сервере локально загруженную модель. [Ollama](https://docs.ollama.com/api/openai-compatibility) · [LM Studio](https://lmstudio.ai/docs/developer/openai-compat)
+Catalog downloads live in `~/Library/Application Support/Voai/Models`. You can follow progress, cancel or resume. Voai verifies SHA-256 before using the weights.
 
-Системную инструкцию можно изменить, сохранить и вернуть к стандартной в разделе **Обработка**. При редактировании инструкции **⌘S** сохраняет изменения. Она применяется со следующей диктовки. Например, для перевода введите «Переведи на английский. Верни только перевод». При ошибке обработки исходный текст остаётся доступным в панели.
+| Editing mode | Setup |
+| --- | --- |
+| Off | Insert the Whisper transcript as recognized. |
+| Model file | Choose a downloaded text model or a GGUF file. llama.cpp runs it on your Mac. |
+| Local server | Start Ollama or LM Studio, enter the base URL, fetch the model list and select a model. If the server requires a bearer token, save it for that address. |
+| Cloud | Choose OpenAI or Anthropic, select a model and save your API key. The provider receives the editing instructions and transcript. |
 
-Настройки находятся в `~/Library/Application Support/Voai`. Ключи провайдеров и токены серверов хранятся в системной Связке ключей. После закрытия настроек Voai остаётся в строке меню.
+Typical local URLs are `http://127.0.0.1:11434/v1` for Ollama and `http://127.0.0.1:1234/v1` for LM Studio. Voai connects to loopback addresses only in local server mode. For offline use, select a downloaded model in the server itself. [Ollama](https://docs.ollama.com/api/openai-compatibility) · [LM Studio](https://lmstudio.ai/docs/developer/openai-compat)
 
-## Обновления
+Edit your instructions under **Editing** and press **⌘S**. For example, try “Translate into French. Return only the translation.” Changes apply to the next dictation. You can restore the default instructions. If editing fails, the panel keeps the original text.
 
-Пункт **Voai → Проверить обновления…** открывает окно Sparkle. Автоматическую проверку можно переключить внизу раздела **Диктовка**. Вы сами выбираете момент установки. Если в Voai идёт диктовка или расшифровка, приложение откладывает перезапуск.
+Settings live in `~/Library/Application Support/Voai`. API keys and server tokens are stored in Keychain. Closing the settings window leaves Voai available in the menu bar.
+
+## Updates
+
+Open **Voai → Check for Updates…** to check manually. The automatic check setting is under **Dictation**. You choose when to install. Voai waits for active dictation and transcription work to finish before restarting.

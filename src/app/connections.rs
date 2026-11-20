@@ -5,6 +5,7 @@ use std::{
     sync::mpsc,
     thread,
 };
+use voai_l10n::tr;
 use voai_models::{ConnectedModel, ModelKind};
 
 type Validation = Result<ConnectedModel, String>;
@@ -31,7 +32,7 @@ impl Connections {
         wake: async_channel::Sender<()>,
     ) -> Result<(), String> {
         if self.busy() {
-            return Err("Дождитесь проверки файла".into());
+            return Err(tr("app.models.wait_for_check").into());
         }
         let (tx, rx) = mpsc::channel();
         self.forgotten_during_validation.clear();
@@ -59,7 +60,9 @@ impl Connections {
         let result = match receiver.try_recv() {
             Ok(result) => result,
             Err(mpsc::TryRecvError::Empty) => return None,
-            Err(mpsc::TryRecvError::Disconnected) => Err("Проверка модели прервана".to_string()),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                Err(tr("app.models.check_interrupted").to_string())
+            }
         };
         self.validation = None;
         if let Ok(model) = &result
@@ -125,7 +128,7 @@ impl Connections {
             .map(|model| {
                 let id = model.id();
                 let state = match self.health.get(&id) {
-                    None => ModelState::Unavailable("Проверяю файл…".into()),
+                    None => ModelState::Unavailable(tr("app.models.checking").into()),
                     Some(Some(error)) => ModelState::Unavailable(error.clone()),
                     Some(None) if id == settings.speech || id == settings.text => {
                         ModelState::Selected
@@ -189,7 +192,7 @@ mod tests {
         assert!(probe() == ModelState::Selected);
         fs::rename(&online, &offline).unwrap();
         assert!(
-            matches!(probe(), ModelState::Unavailable(message) if message.contains("не найден"))
+            matches!(probe(), ModelState::Unavailable(message) if message == settings.local_models[0].resolve().unwrap_err().to_string())
         );
         fs::rename(offline, online).unwrap();
         assert!(probe() == ModelState::Selected);

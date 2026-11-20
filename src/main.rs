@@ -8,8 +8,8 @@ mod macos;
 mod ui;
 
 use std::process::ExitCode;
-
-const HELP: &str = "voai                 Открыть настройки и включить глобальную диктовку\nvoai probe-input     Проверить прямой ввод фразы «Тест Voai 🎙» в редакторе";
+#[cfg(target_os = "macos")]
+use voai_l10n::tr;
 
 #[cfg(target_os = "macos")]
 fn run() -> Result<(), String> {
@@ -28,17 +28,17 @@ fn run() -> Result<(), String> {
                 args.next()
                     .and_then(|a| a.to_str()?.parse::<i32>().ok())
                     .filter(|pid| *pid > 0)
-                    .ok_or("Укажите PID тестового приложения")?,
+                    .ok_or(tr("app.cli.pid"))?,
             ),
-            _ => return Err(HELP.into()),
+            _ => return Err(tr("app.cli.help").into()),
         };
         if args.next().is_some() {
-            return Err(HELP.into());
+            return Err(tr("app.cli.help").into());
         }
         return macos::probe(pid);
     }
     if args.next().is_some() {
-        return Err(HELP.into());
+        return Err(tr("app.cli.help").into());
     }
     match command.as_deref().and_then(|s| s.to_str()) {
         None if command.is_none() => {
@@ -50,10 +50,10 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         Some("--help" | "-h") => {
-            println!("{HELP}");
+            println!("{}", tr("app.cli.help"));
             Ok(())
         }
-        _ => Err(HELP.into()),
+        _ => Err(tr("app.cli.help").into()),
     }
 }
 
@@ -68,7 +68,7 @@ fn main() -> ExitCode {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        eprintln!("Для Voai нужна macOS.\n{HELP}");
+        eprintln!("Voai requires macOS.");
         ExitCode::FAILURE
     }
 }

@@ -1,4 +1,5 @@
 use super::*;
+use voai_l10n::tr;
 
 fn clock(ms: u64) -> String {
     let seconds = ms / 1000;
@@ -59,8 +60,8 @@ impl Settings {
             .gap_1()
             .child(text(
                 match edit {
-                    SpeakerEdit::New(_) => "Новый спикер для этой реплики",
-                    SpeakerEdit::Rename(_) => "Имя спикера во всей расшифровке",
+                    SpeakerEdit::New(_) => tr("ui.speaker.new_line"),
+                    SpeakerEdit::Rename(_) => tr("ui.speaker.rename_all"),
                 },
                 12.,
                 p.muted,
@@ -75,7 +76,7 @@ impl Settings {
                             .child(Input::new(&self.files_ui.editor).small().w_full()),
                     )
                     .child(
-                        button("speaker-save", "Сохранить", p)
+                        button("speaker-save", tr("ui.action.save"), p)
                             .disabled(self.files_ui.editor.read(cx).value().trim().is_empty())
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.save_speaker(window, cx)),
@@ -85,7 +86,7 @@ impl Settings {
                         Button::new("speaker-cancel")
                             .ghost()
                             .small()
-                            .label("Отмена")
+                            .label(tr("ui.action.cancel"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.files_ui.cancel_edit();
                                 window.focus(&this.focus);
@@ -111,7 +112,7 @@ impl Settings {
         let name = speaker
             .and_then(|id| doc.speakers.get(&id))
             .map(String::as_str)
-            .unwrap_or("Без спикера");
+            .unwrap_or(tr("ui.speaker.unknown"));
         let play_engine = engine.clone();
         let text_engine = engine.clone();
         let doc = doc.clone();
@@ -135,7 +136,7 @@ impl Settings {
                 menu = menu
                     .scrollable(true)
                     .max_h(px(280.))
-                    .label("Спикер реплики");
+                    .label(tr("ui.speaker.change"));
                 for (&id, name) in &doc.speakers {
                     let engine = engine.clone();
                     menu = menu.item(
@@ -155,7 +156,7 @@ impl Settings {
                 let create = owner.clone();
                 menu = menu
                     .item(
-                        PopupMenuItem::new("Без спикера")
+                        PopupMenuItem::new(tr("ui.speaker.unknown"))
                             .checked(speaker.is_none())
                             .on_click(move |_, _, _| {
                                 clear_engine.borrow_mut().dispatch(Command::File(
@@ -167,16 +168,16 @@ impl Settings {
                             }),
                     )
                     .separator()
-                    .item(
-                        PopupMenuItem::new("Новый спикер…").on_click(move |_, window, cx| {
+                    .item(PopupMenuItem::new(tr("ui.speaker.new")).on_click(
+                        move |_, window, cx| {
                             let _ = create.update(cx, |this, cx| {
                                 this.edit_speaker(SpeakerEdit::New(index), window, cx)
                             });
-                        }),
-                    );
+                        },
+                    ));
                 if let Some(id) = speaker {
                     let rename = owner.clone();
-                    menu = menu.item(PopupMenuItem::new("Переименовать спикера…").on_click(
+                    menu = menu.item(PopupMenuItem::new(tr("ui.speaker.rename")).on_click(
                         move |_, window, cx| {
                             let _ = rename.update(cx, |this, cx| {
                                 this.edit_speaker(SpeakerEdit::Rename(id), window, cx)
@@ -202,9 +203,9 @@ impl Settings {
                             .ghost()
                             .text_color(if playing { p.accent } else { p.muted })
                             .tooltip(if playing {
-                                "Остановить"
+                                tr("ui.playback.stop")
                             } else {
-                                "Слушать реплику"
+                                tr("ui.speaker.play_line")
                             })
                             .label(format!(
                                 "{} {}",
@@ -223,9 +224,9 @@ impl Settings {
                                 .ghost()
                                 .small()
                                 .label(if original_visible {
-                                    "Скрыть исходник"
+                                    tr("ui.speaker.hide_original")
                                 } else {
-                                    "Исходник"
+                                    tr("ui.speaker.original")
                                 })
                                 .on_click(move |_, _, cx| {
                                     let _ = original_owner.update(cx, |view, cx| {
@@ -244,7 +245,7 @@ impl Settings {
                         )
                     })
                     .when(line.review, |r| {
-                        r.child(text("Проверить спикера", 11., p.muted))
+                        r.child(text(tr("ui.speaker.review"), 11., p.muted))
                     }),
             )
             .child(

@@ -6,6 +6,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use voai_l10n::{tf, tr};
 
 #[derive(PartialEq)]
 pub(crate) struct Target {
@@ -25,7 +26,7 @@ fn check(status: AXError, action: &str) -> Result<(), String> {
 }
 
 fn permission_hint() -> &'static str {
-    "Откройте «Конфиденциальность и безопасность» → «Универсальный доступ» и включите Voai. Если доступ уже включён, удалите старую запись и добавьте Voai.app заново."
+    tr("app.insertion.permission")
 }
 
 fn attribute<T: ConcreteType>(field: &AXUIElement, key: &str) -> Result<CFRetained<T>, AXError> {
@@ -43,17 +44,15 @@ fn attribute<T: ConcreteType>(field: &AXUIElement, key: &str) -> Result<CFRetain
 fn required<T: ConcreteType>(field: &AXUIElement, key: &str) -> Result<CFRetained<T>, String> {
     attribute(field, key).map_err(|error| match error {
         AXError::APIDisabled => permission_hint().into(),
-        AXError::CannotComplete => {
-            "Приложение не ответило. Вернитесь в редактор и попробуйте ещё раз.".into()
-        }
+        AXError::CannotComplete => tr("app.insertion.app_timeout").into(),
         AXError::NoValue | AXError::AttributeUnsupported => match key {
-            "AXSelectedTextRange" => "Не удалось найти курсор. Выберите другое поле.".into(),
+            "AXSelectedTextRange" => tr("app.insertion.cursor_missing").into(),
             "AXFocusedUIElement" | "AXWindow" | "AXFocusedWindow" => {
-                "Установите курсор в текстовое поле.".into()
+                tr("app.insertion.place_cursor").into()
             }
-            _ => "Поле не поддерживает прямой ввод.".into(),
+            _ => tr("app.insertion.unsupported").into(),
         },
-        _ => format!("Не удалось прочитать {key} (AX {})", error.0),
+        _ => tf!("app.insertion.read_attribute", key = key, code = error.0),
     })
 }
 
@@ -98,17 +97,17 @@ fn focused_field(pid: i32) -> Result<CFRetained<AXUIElement>, String> {
 }
 
 fn capture(expected: Option<i32>) -> Result<Target, String> {
-    let pid = front_pid().ok_or("Нет активного приложения")?;
+    let pid = front_pid().ok_or(tr("app.insertion.no_app"))?;
     if expected.is_some_and(|expected| expected != pid) {
-        return Err("Сейчас активно другое приложение.".into());
+        return Err(tr("app.insertion.other_app").into());
     }
     let field = focused_field(pid)?;
     match attribute::<CFString>(&field, "AXSubrole") {
         Ok(role) if role.to_string() == "AXSecureTextField" => {
-            return Err("В защищённом поле диктовка недоступна.".into());
+            return Err(tr("app.insertion.secure_field").into());
         }
         Ok(_) | Err(AXError::AttributeUnsupported | AXError::NoValue) => {}
-        Err(error) => return Err(format!("Не удалось проверить тип поля (AX {})", error.0)),
+        Err(error) => return Err(tf!("app.insertion.check_field", code = error.0)),
     }
     let window = required(&field, "AXWindow")?;
     let mut writable = 0;
@@ -122,7 +121,7 @@ fn capture(expected: Option<i32>) -> Result<Target, String> {
         AXError::Success => writable != 0,
         AXError::AttributeUnsupported => false,
         error => {
-            check(error, "Не удалось проверить поддержку прямого ввода")?;
+            check(error, tr("app.insertion.check_support"))?;
             false
         }
     };
@@ -135,13 +134,13 @@ fn capture(expected: Option<i32>) -> Result<Target, String> {
             role.to_string().as_str(),
             "AXTextField" | "AXTextArea" | "AXComboBox"
         ) {
-            return Err("Выберите редактируемое текстовое поле.".into());
+            return Err(tr("app.insertion.choose_editable").into());
         }
     }
     // Remote accessibility elements can belong to a renderer. Keyboard events
     // must go to the foreground application hosting the captured window.
     if front_pid() != Some(pid) {
-        return Err("Активное приложение сменилось.".into());
+        return Err(tr("app.insertion.app_changed").into());
     }
     let selection = selected_range(&field)?;
     Ok(Target {
@@ -185,7 +184,7 @@ fn selected_range(field: &AXUIElement) -> Result<CFRange, String> {
         || selection.location < 0
         || selection.length < 0
     {
-        return Err("Недоступно положение курсора или выделения.".into());
+        return Err(tr("app.insertion.selection_missing").into());
     }
     Ok(selection)
 }
@@ -226,7 +225,7 @@ fn open_permission_settings(pane: &str) -> Result<(), String> {
         ))
         .spawn()
         .map(|_| ())
-        .map_err(|err| format!("Не удалось открыть системные настройки: {err}"))
+        .map_err(|err| tf!("app.insertion.settings_failed", error = err))
 }
 
 pub fn microphone_allowed() -> bool {
@@ -241,7 +240,7 @@ pub fn microphone_allowed() -> bool {
 
 pub fn request_microphone() -> Result<(), String> {
     use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio};
-    let audio = unsafe { AVMediaTypeAudio }.ok_or("Микрофон недоступен")?;
+    let audio = unsafe { AVMediaTypeAudio }.ok_or(tr("app.audio.mic_unavailable"))?;
     match unsafe { AVCaptureDevice::authorizationStatusForMediaType(audio) } {
         AVAuthorizationStatus::NotDetermined => unsafe {
             AVCaptureDevice::requestAccessForMediaType_completionHandler(
@@ -324,12 +323,12 @@ impl Destination {
         let system = unsafe { AXUIElement::new_system_wide() };
         check(
             unsafe { system.set_messaging_timeout(0.4) },
-            "Таймаут Accessibility",
+            tr("app.insertion.accessibility_timeout"),
         )?;
         // Electron publishes its editable DOM only after assistive clients opt in.
-        let front = front_pid().ok_or("Нет активного приложения")?;
+        let front = front_pid().ok_or(tr("app.insertion.no_app"))?;
         if pid.is_some_and(|expected| front != expected) {
-            return Err("Сейчас активно другое приложение.".into());
+            return Err(tr("app.insertion.other_app").into());
         }
         let app = unsafe { AXUIElement::new_application(front) };
         let attr = CFString::from_str("AXManualAccessibility");
@@ -354,9 +353,7 @@ impl Destination {
             || {
                 let current = capture(None)?;
                 if !current.direct_write && text.chars().any(char::is_control) {
-                    return Err(
-                        "В это поле нельзя вставить несколько строк. Выберите другое поле.".into(),
-                    );
+                    return Err(tr("app.insertion.multiline").into());
                 }
                 Ok(current)
             },
@@ -368,7 +365,7 @@ impl Destination {
                             &CFString::from_str(text),
                         )
                     };
-                    return check(status, "Ошибка записи AXSelectedText");
+                    return check(status, tr("app.insertion.ax_write"));
                 }
                 type_unicode(target, text)?;
                 receipt = Some(Receipt::new(target, text)?);
@@ -385,11 +382,11 @@ fn type_unicode(target: &Target, text: &str) -> Result<(), String> {
     let mut chars = text.chars().peekable();
     while chars.peek().is_some() {
         if front_pid() != Some(target.pid) {
-            return Err("Активное приложение сменилось во время ввода.".into());
+            return Err(tr("app.insertion.app_switched").into());
         }
         let field = focused_field(target.pid)?;
         if field != target.field {
-            return Err("Во время ввода активным стало другое поле.".into());
+            return Err(tr("app.insertion.field_switched").into());
         }
         let mut chunk = Vec::with_capacity(20);
         while let Some(&ch) = chars.peek() {
@@ -399,8 +396,10 @@ fn type_unicode(target: &Target, text: &str) -> Result<(), String> {
             chunk.extend_from_slice(ch.encode_utf16(&mut [0; 2]));
             chars.next();
         }
-        let down = CGEvent::new_keyboard_event(None, 0, true).ok_or("Событие недоступно")?;
-        let up = CGEvent::new_keyboard_event(None, 0, false).ok_or("Событие недоступно")?;
+        let down =
+            CGEvent::new_keyboard_event(None, 0, true).ok_or(tr("app.insertion.keyboard_event"))?;
+        let up = CGEvent::new_keyboard_event(None, 0, false)
+            .ok_or(tr("app.insertion.keyboard_event"))?;
         for event in [&down, &up] {
             CGEvent::set_flags(Some(event), CGEventFlags(0));
             // The slice remains live for the call and contains complete UTF-16 scalars.
@@ -431,7 +430,7 @@ impl Receipt {
             length: expected.length(),
         };
         let parameter = unsafe { AXValue::new(AXValueType::CFRange, NonNull::from(&range).cast()) }
-            .ok_or("Не удалось проверить результат ввода.")?;
+            .ok_or(tr("app.insertion.verify_failed"))?;
         Ok(Self {
             field: target.field.clone(),
             range,
@@ -484,9 +483,8 @@ impl Receipt {
                 return Some(Ok(()));
             }
         }
-        (status == AXError::InvalidUIElement || Instant::now() >= self.deadline).then(|| {
-            Err("Проверьте, появился ли текст у курсора. Приложение не подтвердило вставку.".into())
-        })
+        (status == AXError::InvalidUIElement || Instant::now() >= self.deadline)
+            .then(|| Err(tr("app.insertion.uncertain").into()))
     }
 }
 
@@ -497,11 +495,11 @@ pub fn probe(expected_pid: Option<i32>) -> Result<(), String> {
     // Automated probes specify the already-focused owner. Only the interactive
     // command needs time for a person to switch from their terminal.
     if expected_pid.is_none() {
-        eprintln!("Выберите тестовое поле. Захват цели через 4 секунды.");
+        eprintln!("{}", tr("app.probe.choose_field"));
         thread::sleep(Duration::from_secs(4));
     }
     let destination = Destination::capture_for(expected_pid, false)?;
-    eprintln!("Цель зафиксирована.");
+    eprintln!("{}", tr("app.probe.captured"));
     thread::sleep(if expected_pid.is_some() {
         Duration::from_millis(350)
     } else {
@@ -509,7 +507,7 @@ pub fn probe(expected_pid: Option<i32>) -> Result<(), String> {
     });
     let receipt = destination
         .deliver("Тест Voai 🎙")
-        .map_err(|e| format!("Результат ввода: {e:?}"))?;
+        .map_err(|e| tf!("app.probe.result", error = format_args!("{e:?}")))?;
     if let Some(receipt) = receipt {
         loop {
             if let Some(result) = receipt.poll() {
@@ -522,6 +520,6 @@ pub fn probe(expected_pid: Option<i32>) -> Result<(), String> {
             CFRunLoop::run_in_mode(unsafe { kCFRunLoopDefaultMode }, 0.030, false);
         }
     }
-    println!("Запрос отправлен. Проверьте фразу у курсора.");
+    println!("{}", tr("app.probe.complete"));
     Ok(())
 }

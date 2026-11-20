@@ -65,7 +65,8 @@ fn saves_renames_and_exports_the_selected_document() {
         title: "dialogue".into(),
         source_stamp: SourceStamp::read(&src).unwrap(),
         source: src,
-        warning: None,
+        notices: Vec::new(),
+        legacy_warning: None,
         speakers: Default::default(),
         lines: align(vec![word(3600010, 3600780, "Привет!")], vec![]),
     };
@@ -106,15 +107,40 @@ fn plain_document_joins_chunks_and_preserves_timing_when_reopened() {
             ],
             vec![],
         ),
-        warning: Some("Расшифровано без определения спикеров. Обработка прервалась.".into()),
+        notices: Vec::new(),
+        legacy_warning: Some("Расшифровано без определения спикеров. Обработка прервалась.".into()),
     };
     let db = store::Store::open(dir.path()).unwrap();
     db.save(&mut doc).unwrap();
-    let read = db.load(doc.id).unwrap();
+    let read = db.load(doc.id.clone()).unwrap();
     assert_eq!(read.lines.len(), 3);
     assert_eq!(read.paragraphs(), ["Первая фраза.", "Вторая фраза."]);
-    assert_eq!(read.warning.as_deref(), Some("Обработка прервалась."));
+    assert_eq!(
+        read.warning_text().as_deref(),
+        Some("Обработка прервалась.")
+    );
     assert_eq!(read.lines[2].start_ms, 7500);
+    doc.legacy_warning = Some("Не удалось определить спикеров. Текст и таймкоды сохранены. Обработка прервалась. У оставшихся реплик сохранён исходный текст.".into());
+    db.save(&mut doc).unwrap();
+    let mut migrated = db.load(doc.id).unwrap();
+    assert!(migrated.legacy_warning.is_none());
+    assert_eq!(
+        migrated.warning_text(),
+        Some(format!(
+            "{} {}",
+            tr("app.files.speakers_skipped"),
+            tr("app.files.remaining_original")
+        ))
+    );
+    db.save(&mut migrated).unwrap();
+    let saved = db.load(migrated.id.clone()).unwrap();
+    assert!(saved == migrated);
+    let stored = serde_json::to_value(&saved).unwrap();
+    assert!(stored.get("warning").is_none());
+    assert_eq!(
+        stored["notices"],
+        serde_json::json!(["speakers_unavailable", "editing_interrupted"])
+    );
 }
 
 #[test]
@@ -188,7 +214,7 @@ fn imports_media_with_packaged_workers() {
         language: "ru".into(),
         voices: env::var_os("VOAI_FILE_QA_VOICES").map(Into::into),
         editor: env::var_os("VOAI_FILE_QA_EDITOR").map(Into::into),
-        prompt: voai_models::DEFAULT_PROCESSING_PROMPT.into(),
+        prompt: voai_models::default_processing_prompt().into(),
     };
     let (updates, rx) = mpsc::channel();
     let (wake, _) = async_channel::bounded(1);
@@ -201,14 +227,14 @@ fn imports_media_with_packaged_workers() {
         let mut last = String::new();
         while let Ok(update) = rx.recv() {
             if let Update::Progress(p) = update
-                && p.stage != last
+                && p.stage_key != last
             {
                 println!(
                     "stage {} after {:.1}s",
-                    p.stage,
+                    p.stage_key,
                     started.elapsed().as_secs_f32()
                 );
-                last = p.stage;
+                last = p.stage_key.to_owned();
             }
         }
     });
@@ -218,9 +244,9 @@ fn imports_media_with_packaged_workers() {
     assert!(!doc.lines.is_empty());
     let expect_fallback = env::var_os("VOAI_FILE_QA_FALLBACK").is_some();
     if expect_fallback {
-        assert!(doc.warning.is_some() && doc.speakers.is_empty());
+        assert!(doc.warning_text().is_some() && doc.speakers.is_empty());
     } else if pipeline.voices.is_some() {
-        assert!(doc.warning.is_none() && !doc.speakers.is_empty());
+        assert!(doc.warning_text().is_none() && !doc.speakers.is_empty());
     }
     if pipeline.editor.is_some() {
         assert!(doc.lines.iter().any(|l| l.original.is_some()));
@@ -272,7 +298,7 @@ fn transcribes_bot_voice_and_video_with_packaged_workers() {
         assert_eq!(
             bot.transcribe(path(media), Arc::new(true.into()))
                 .unwrap_err(),
-            "Импорт отменён."
+            tr("app.files.import_cancelled")
         );
     }
     assert!(files.view.document.is_none() && library.list().unwrap().is_empty());
@@ -295,7 +321,7 @@ fn cancel_stops_packaged_recognition_without_saving() {
     let (wake, _rx) = async_channel::bounded(1);
     let mut files = Files::new(tmp.path(), wake);
     until_idle(&mut files);
-    files.start("Подготовка", true, move |_, work| {
+    files.start("app.files.preparing", true, move |_, work| {
         job::import(&tools, source, &pipeline, work).map(ResultView::Imported)
     });
 
@@ -304,12 +330,9 @@ fn cancel_stops_packaged_recognition_without_saving() {
     let child = loop {
         files.poll();
         assert!(files.job.is_some() && Instant::now() < deadline);
-        if files
-            .view
-            .progress
-            .as_ref()
-            .is_some_and(|p| p.stage == "Распознавание речи" && (1..100).contains(&p.percent))
-        {
+        if files.view.progress.as_ref().is_some_and(|p| {
+            p.stage_key == "app.files.recognizing" && (1..100).contains(&p.percent)
+        }) {
             let list = Command::new("/usr/bin/pgrep")
                 .args(["-P", &parent, "-f", " --file-worker "])
                 .output()

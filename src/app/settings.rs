@@ -6,12 +6,15 @@ use std::{
     path::{Path, PathBuf},
 };
 use tempfile::NamedTempFile;
+use voai_l10n::tr;
 use voai_models::{ConnectedModel, ModelKind, ModelStore};
 
 const LEGACY_PROCESSING_PROMPT: &str = "Отредактируй фразу как корректор. Убери слова-паразиты и случайные повторы. Начни предложение с заглавной буквы, заверши подходящим знаком. Сохрани исходный язык, слова, обращение на ты или вы и смысл. Верни только исправленную фразу.";
 
 fn is_default_prompt(prompt: &str) -> bool {
-    prompt == voai_models::DEFAULT_PROCESSING_PROMPT
+    ["en", "ru"]
+        .into_iter()
+        .any(|locale| prompt == voai_l10n::tr_for(locale, "prompt.default"))
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -22,6 +25,8 @@ pub(super) struct Settings {
     pub microphone: Option<String>,
     pub noise_suppression: bool,
     pub compact_widget: bool,
+    pub interface_language: voai_l10n::InterfaceLanguage,
+    #[serde(default = "legacy_speech_language")]
     pub language: String,
     pub speech: String,
     pub text: String,
@@ -35,6 +40,10 @@ pub(super) struct Settings {
     pub server_model: String,
 }
 
+fn legacy_speech_language() -> String {
+    "ru".into()
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -43,12 +52,17 @@ impl Default for Settings {
             microphone: None,
             noise_suppression: false,
             compact_widget: false,
-            language: "ru".into(),
+            interface_language: Default::default(),
+            language: "auto".into(),
             speech: String::new(),
             text: String::new(),
             local_models: Vec::new(),
             mode: Mode::Off,
-            processing_prompt: voai_models::DEFAULT_PROCESSING_PROMPT.into(),
+            processing_prompt: voai_l10n::tr_for(
+                voai_l10n::InterfaceLanguage::System.resolve(),
+                "prompt.default",
+            )
+            .into(),
             provider: "OpenAI".into(),
             cloud_model: voai_models::Provider::OpenAI.models()[0].into(),
             server_url: "http://127.0.0.1:11434/v1".into(),
@@ -63,14 +77,12 @@ pub(super) fn data_dir() -> io::Result<PathBuf> {
         return if dir.is_absolute() {
             Ok(dir)
         } else {
-            Err(io::Error::other(
-                "VOAI_DATA_DIR должен содержать абсолютный путь",
-            ))
+            Err(io::Error::other(tr("app.settings.absolute_data_dir")))
         };
     }
     std::env::home_dir()
         .map(|p| p.join("Library/Application Support/Voai"))
-        .ok_or_else(|| io::Error::other("Домашний каталог недоступен"))
+        .ok_or_else(|| io::Error::other(tr("app.settings.home_missing")))
 }
 
 impl Settings {
@@ -91,7 +103,7 @@ impl Settings {
             .local_models
             .iter()
             .position(|model| model.id() == id)
-            .ok_or("Подключение не найдено")?;
+            .ok_or(tr("app.models.connection_missing"))?;
         self.local_models.remove(index);
         if self.speech == id {
             self.speech.clear();
@@ -113,7 +125,7 @@ impl Settings {
             .local_models
             .iter()
             .find(|model| model.id() == id)
-            .ok_or("Скачайте или подключите модель в настройках")?;
+            .ok_or(tr("app.models.choose_first"))?;
         model
             .resolve()
             .map(|path| (model.kind, path.to_owned()))
@@ -130,7 +142,7 @@ impl Settings {
 
     pub fn use_text_model(&mut self, store: &ModelStore, id: String) -> Result<(), String> {
         if self.resolve_model(store, &id)?.0 != ModelKind::Text {
-            return Err("Для обработки нужна текстовая модель.".into());
+            return Err(tr("app.models.need_text").into());
         }
         self.text = id;
         self.mode = Mode::Local;
@@ -152,7 +164,7 @@ impl Settings {
     ) -> Result<PathBuf, String> {
         let (actual, path) = self.resolve_model(store, id)?;
         if actual != kind {
-            return Err("Выберите модель подходящего типа в настройках".into());
+            return Err(tr("app.models.wrong_type").into());
         }
         Ok(path)
     }
@@ -162,8 +174,16 @@ impl Settings {
         Ok(())
     }
 
+    pub fn set_interface_language(&mut self, language: voai_l10n::InterfaceLanguage) {
+        self.interface_language = language;
+        if is_default_prompt(&self.processing_prompt) {
+            self.reset_processing_prompt();
+        }
+    }
+
     pub fn reset_processing_prompt(&mut self) {
-        self.processing_prompt = voai_models::DEFAULT_PROCESSING_PROMPT.into();
+        self.processing_prompt =
+            voai_l10n::tr_for(self.interface_language.resolve(), "prompt.default").into();
     }
 
     pub fn load(dir: &Path) -> io::Result<Self> {
@@ -178,7 +198,10 @@ impl Settings {
                         settings.version = 2;
                     }
                     2 => {}
-                    _ => return Err(io::Error::other("Неподдерживаемая версия настроек")),
+                    _ => return Err(io::Error::other(tr("app.settings.version_unsupported"))),
+                }
+                if is_default_prompt(&settings.processing_prompt) {
+                    settings.reset_processing_prompt();
                 }
                 Ok(settings)
             }
@@ -211,7 +234,10 @@ mod tests {
         let mut settings = Settings::load(dir.path()).unwrap();
         assert_eq!(
             settings.processing_prompt,
-            voai_models::DEFAULT_PROCESSING_PROMPT
+            voai_l10n::tr_for(
+                voai_l10n::InterfaceLanguage::System.resolve(),
+                "prompt.default"
+            )
         );
         fs::write(
             dir.path().join("settings.json"),
@@ -224,7 +250,10 @@ mod tests {
         settings = Settings::load(dir.path()).unwrap();
         assert_eq!(
             settings.processing_prompt,
-            voai_models::DEFAULT_PROCESSING_PROMPT
+            voai_l10n::tr_for(
+                voai_l10n::InterfaceLanguage::System.resolve(),
+                "prompt.default"
+            )
         );
         let original_session = settings.clone();
         let prompt = "Исправь пунктуацию.\nСохрани имена.";
@@ -243,7 +272,10 @@ mod tests {
         );
         assert_eq!(
             original_session.processing_prompt,
-            voai_models::DEFAULT_PROCESSING_PROMPT
+            voai_l10n::tr_for(
+                voai_l10n::InterfaceLanguage::System.resolve(),
+                "prompt.default"
+            )
         );
         settings.reset_processing_prompt();
         settings.save(dir.path()).unwrap();
@@ -252,7 +284,41 @@ mod tests {
         assert!(saved.get("processing_prompt").is_none());
         assert_eq!(
             Settings::load(dir.path()).unwrap().processing_prompt,
-            voai_models::DEFAULT_PROCESSING_PROMPT
+            voai_l10n::tr_for(
+                voai_l10n::InterfaceLanguage::System.resolve(),
+                "prompt.default"
+            )
+        );
+    }
+
+    #[test]
+    fn changing_interface_language_keeps_speech_and_custom_prompt() {
+        use voai_l10n::InterfaceLanguage::{English, Russian, System};
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("settings.json"), r#"{"version":2}"#).unwrap();
+        let mut settings = Settings::load(dir.path()).unwrap();
+        assert_eq!(settings.interface_language, System);
+        assert_eq!(settings.language, "ru");
+        settings.set_interface_language(English);
+        settings.save(dir.path()).unwrap();
+        let mut settings = Settings::load(dir.path()).unwrap();
+        assert_eq!(settings.interface_language, English);
+        assert_eq!(
+            settings.processing_prompt,
+            voai_l10n::tr_for("en", "prompt.default")
+        );
+        settings
+            .set_processing_prompt("Keep punctuation as dictated.".into())
+            .unwrap();
+        settings.set_interface_language(Russian);
+        settings.save(dir.path()).unwrap();
+        let mut settings = Settings::load(dir.path()).unwrap();
+        assert_eq!(settings.language, "ru");
+        assert_eq!(settings.processing_prompt, "Keep punctuation as dictated.");
+        settings.reset_processing_prompt();
+        assert_eq!(
+            settings.processing_prompt,
+            voai_l10n::tr_for("ru", "prompt.default")
         );
     }
 

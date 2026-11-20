@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use voai_l10n::{tf, tr};
 
 use gpui::{prelude::*, *};
 use gpui_component::{Sizable, button::Button};
@@ -148,15 +149,19 @@ pub fn track(fraction: f32, p: Palette) -> Div {
 
 pub fn bytes(size: u64) -> String {
     if size >= 1_000_000_000 {
-        format!("{:.2} ГБ", size as f64 / 1e9).replace('.', ",")
+        let mut number = format!("{:.2}", size as f64 / 1e9);
+        if voai_l10n::language() == "ru" {
+            number = number.replace('.', ",");
+        }
+        tf!("ui.size.gb", size = number)
     } else {
-        format!("{} МБ", size.div_ceil(1_000_000))
+        tf!("ui.size.mb", size = size.div_ceil(1_000_000))
     }
 }
 
 pub fn shortcut_label(value: &str) -> String {
     if value == crate::app::right_command::SHORTCUT {
-        return "Правый ⌘".into();
+        return tr("ui.shortcut.right_command").into();
     }
     value
         .split('+')
@@ -165,7 +170,7 @@ pub fn shortcut_label(value: &str) -> String {
             "option" | "alt" => "⌥".into(),
             "ctrl" | "control" => "⌃".into(),
             "shift" => "⇧".into(),
-            "space" => "Пробел".into(),
+            "space" => tr("ui.shortcut.space").into(),
             _ => part.strip_prefix("Key").unwrap_or(part).to_string(),
         })
         .collect::<Vec<_>>()

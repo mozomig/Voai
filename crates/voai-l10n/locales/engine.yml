@@ -1,0 +1,460 @@
+_version: 2
+"text.context.input":
+  en: "The phrase exceeds this model’s context window."
+  ru: "Фраза превышает контекст модели"
+"text.context.output":
+  en: "The model ran out of context before finishing its reply."
+  ru: "Модель исчерпала контекст до завершения ответа"
+"text.message.size":
+  en: "The message is empty or too long."
+  ru: "Сообщение пусто или слишком велико"
+"text.mode.missing":
+  en: "Specify a text engine mode."
+  ru: "Не задан режим работы движка"
+"text.path.missing":
+  en: "Choose a GGUF model."
+  ru: "Укажите путь к GGUF модели"
+"text.protocol":
+  en: "Unsupported text engine protocol."
+  ru: "Неподдерживаемая версия протокола"
+"text.output.empty":
+  en: "The model returned no text."
+  ru: "Пустой результат обработки"
+"speech.model.missing":
+  en: "Speech model file not found."
+  ru: "Файл речевой модели отсутствует"
+"speech.language.invalid":
+  en: "Invalid speech language code."
+  ru: "Некорректный код языка"
+"speech.mic.silent":
+  en: "No audio. Check the microphone and its permission in System Settings."
+  ru: "Нет звука. Проверьте микрофон и разрешение на запись."
+"speech.mic.stalled":
+  en: "The microphone stopped sending audio"
+  ru: "Микрофон перестал передавать звук"
+"speech.limit.time":
+  en: "The five-minute limit was reached"
+  ru: "Достигнут лимит в пять минут"
+"speech.release.partial":
+  en: "%{reason}. Release the shortcut to insert what you recorded."
+  ru: "%{reason}. Отпустите клавиши, чтобы вставить записанный текст."
+"speech.timeout":
+  en: "Whisper took too long to respond."
+  ru: "Whisper не ответил вовремя"
+"speech.stopped":
+  en: "Recognition stopped."
+  ru: "Распознавание остановлено"
+"speech.reply.large":
+  en: "Whisper’s response was too large."
+  ru: "Слишком длинный ответ Whisper"
+"speech.reply.invalid":
+  en: "Unrecognized response from the speech worker."
+  ru: "Неизвестный ответ речевого процесса"
+"speech.worker.lost":
+  en: "Lost connection to the speech worker (%{e})."
+  ru: "Связь с речевым процессом прервана: %{e}"
+"speech.check.start":
+  en: "Couldn’t start the Whisper model check (%{e})."
+  ru: "Не удалось запустить проверку модели Whisper: %{e}"
+"speech.check.load":
+  en: "Whisper couldn’t load this model."
+  ru: "Движок Whisper не смог загрузить выбранную модель"
+"speech.check.timeout":
+  en: "The Whisper model check timed out."
+  ru: "Истекло время проверки модели Whisper"
+"speech.path.missing":
+  en: "Specify a model file."
+  ru: "Не задан путь к модели"
+"speech.protocol":
+  en: "Incompatible speech worker protocol."
+  ru: "Несовместимая версия речевого процесса"
+"speech.open.detail":
+  en: "Couldn’t open the speech model (%{err})."
+  ru: "Не удалось открыть речевую модель: %{err}"
+"speech.command":
+  en: "Unknown recognition command."
+  ru: "Неизвестная команда распознавания"
+"speech.limit.samples":
+  en: "The recording is too long."
+  ru: "Превышена максимальная длина фразы"
+"speech.decode.error":
+  en: "Couldn’t transcribe the audio (%{e})."
+  ru: "Не удалось распознать речь: %{e}"
+"speech.open.error":
+  en: "Couldn’t open the speech model (%{e})."
+  ru: "Не удалось открыть речевую модель: %{e}"
+"speech.worker.start":
+  en: "Couldn’t start the speech worker (%{e})."
+  ru: "Не удалось запустить речевой процесс: %{e}"
+"speech.worker.exited":
+  en: "The speech worker exited."
+  ru: "Речевой процесс завершился"
+"mic.missing":
+  en: "The selected microphone is unavailable. Choose another in settings."
+  ru: "Выбранный микрофон недоступен. Выберите устройство в настройках."
+"mic.unplugged":
+  en: "Microphone disconnected."
+  ru: "Микрофон отключён"
+"mic.list.failed":
+  en: "Couldn’t list audio devices (Core Audio %{e})."
+  ru: "Не удалось получить список аудиоустройств (Core Audio %{e})"
+"mic.list.size":
+  en: "Invalid audio device list."
+  ru: "Некорректный размер списка аудиоустройств"
+"mic.list.read":
+  en: "Couldn’t read audio devices (Core Audio %{last_status})."
+  ru: "Не удалось прочитать список аудиоустройств (Core Audio %{last_status})"
+"mic.unavailable":
+  en: "Microphone unavailable. Check the selected device."
+  ru: "Микрофон недоступен. Проверьте выбранное устройство."
+"mic.open":
+  en: "Couldn’t open the microphone (%{e})."
+  ru: "Не удалось открыть микрофон: %{e}"
+"mic.config":
+  en: "Unsupported microphone configuration."
+  ru: "Неподдерживаемая конфигурация микрофона"
+"mic.format":
+  en: "Unsupported microphone format (%{format})."
+  ru: "Неподдерживаемый формат микрофона: %{format}"
+"mic.start":
+  en: "Couldn’t start recording. Check microphone access (%{e})."
+  ru: "Не удалось запустить запись. Проверьте доступ к микрофону: %{e}"
+"mic.overflow":
+  en: "The audio buffer filled up."
+  ru: "Переполнен аудиобуфер"
+"mic.lost":
+  en: "Lost connection to the microphone."
+  ru: "Потеряна связь с микрофоном"
+"mic.stream":
+  en: "Couldn’t open the audio stream (%{e})."
+  ru: "Не удалось открыть поток микрофона: %{e}"
+"file.whisper.missing":
+  en: "Choose a Whisper model."
+  ru: "Не указана модель Whisper."
+"file.language.missing":
+  en: "Specify the speech language."
+  ru: "Не указан язык речи."
+"file.audio.missing":
+  en: "Specify an audio file."
+  ru: "Не указан путь к звуку."
+"file.args":
+  en: "Invalid transcription settings."
+  ru: "Некорректные параметры распознавания."
+"file.track.unavailable":
+  en: "The temporary audio track is unavailable."
+  ru: "Временная аудиодорожка недоступна."
+"file.track.length":
+  en: "Couldn’t read the recording length."
+  ru: "Не удалось прочитать длину записи."
+"file.track.damaged":
+  en: "The audio track is empty or damaged."
+  ru: "Аудиодорожка пуста или повреждена."
+"file.model.open":
+  en: "Couldn’t open the speech model."
+  ru: "Не удалось открыть речевую модель."
+"file.whisper.start":
+  en: "Couldn’t start Whisper."
+  ru: "Не удалось запустить Whisper."
+"file.audio.seek":
+  en: "Couldn’t seek within the audio."
+  ru: "Не удалось перейти к звуку."
+"file.audio.read":
+  en: "Couldn’t read the rest of the audio."
+  ru: "Не удалось дочитать звук."
+"file.transcription.interrupted":
+  en: "Transcription was interrupted."
+  ru: "Расшифровка прервана."
+"file.whisper.segment":
+  en: "Whisper couldn’t transcribe part of the recording."
+  ru: "Whisper не смог распознать фрагмент записи."
+"file.whisper.text":
+  en: "Whisper returned invalid text."
+  ru: "Whisper вернул некорректный текст."
+"model.regular":
+  en: "Select a model file."
+  ru: "Выберите обычный файл модели"
+"model.missing":
+  en: "Model file not found."
+  ru: "Не удалось найти файл модели"
+"model.path":
+  en: "The model path must be valid UTF-8."
+  ru: "Путь к модели должен быть в UTF-8"
+"model.ram.limit":
+  en: "The model exceeds the memory limit for this Mac (%{limit} GB)."
+  ru: "Модель слишком велика для этого Mac. Лимит — %{limit} ГБ."
+"model.unreadable":
+  en: "Couldn’t read the model file."
+  ru: "Не удалось прочитать файл модели"
+"model.changed.import":
+  en: "The file changed during import."
+  ru: "Файл изменился во время подключения"
+"model.drive":
+  en: "Model file not found. Connect its drive or select the file again."
+  ru: "Файл модели не найден. Подключите диск или выберите файл повторно."
+"model.access":
+  en: "No access to the model file. Check its read permissions."
+  ru: "Нет доступа к файлу модели. Проверьте разрешения на чтение."
+"model.unavailable":
+  en: "Model file unavailable. Check its drive and try again."
+  ru: "Файл модели недоступен. Проверьте диск и попробуйте снова."
+"model.changed":
+  en: "The model file changed. Add it again."
+  ru: "Файл модели изменился. Подключите его повторно"
+"model.ram.unknown":
+  en: "Couldn’t determine how much memory this Mac has."
+  ru: "Не удалось определить объём памяти Mac"
+"model.truncated":
+  en: "The model file is incomplete."
+  ru: "Файл модели обрезан"
+"model.gguf.expected":
+  en: "Choose a llama.cpp GGUF file for text processing."
+  ru: "Для обработки текста выберите файл llama.cpp GGUF"
+"model.ggml.expected":
+  en: "Choose a whisper.cpp GGML file for speech recognition."
+  ru: "Для распознавания выберите модель whisper.cpp в формате GGML"
+"model.whisper.params":
+  en: "Invalid whisper.cpp parameters."
+  ru: "Некорректные параметры whisper.cpp"
+"model.whisper.vocab":
+  en: "Invalid whisper.cpp vocabulary."
+  ru: "Некорректный словарь whisper.cpp"
+"model.whisper.vocab.corrupt":
+  en: "Damaged whisper.cpp vocabulary."
+  ru: "Повреждён словарь whisper.cpp"
+"model.check.start":
+  en: "Couldn’t start the text model check."
+  ru: "Не удалось запустить проверку текстовой модели"
+"model.check.incompatible":
+  en: "Choose a GGUF model that llama.cpp can open and that includes a compatible chat template."
+  ru: "Выберите GGUF-модель с шаблоном чата, совместимую с llama.cpp."
+"model.check.stopped":
+  en: "Model check interrupted."
+  ru: "Проверка модели прервана"
+"model.check.timeout":
+  en: "Text model check timed out."
+  ru: "Время проверки текстовой модели истекло"
+"operation.cancelled":
+  en: "Operation cancelled"
+  ru: "Операция отменена"
+"model.not.installed":
+  en: "Model not installed."
+  ru: "Модель не установлена"
+"model.corrupt":
+  en: "The model file is damaged."
+  ru: "Файл модели повреждён"
+"model.unverified":
+  en: "The model hasn’t been verified."
+  ru: "Модель не проверена"
+"model.changed.verified":
+  en: "The model changed after verification."
+  ru: "Файл модели изменился после проверки"
+"model.directory":
+  en: "Couldn’t create the model folder."
+  ru: "Не удалось создать каталог модели"
+"model.locked":
+  en: "Another process is already downloading this model."
+  ru: "Модель уже загружается другим процессом"
+"model.installed.unreadable":
+  en: "Couldn’t read the installed model."
+  ru: "Не удалось прочитать установленную модель"
+"download.failed":
+  en: "Couldn’t download the model (%{reason}). Try again."
+  ru: "Не удалось скачать модель (%{reason}). Повторите загрузку"
+"download.range":
+  en: "The server returned an invalid file range."
+  ru: "Сервер вернул неверный диапазон модели"
+"download.http":
+  en: "The download server returned HTTP %{code}."
+  ru: "Сервис загрузки вернул HTTP %{code}"
+"download.checksum":
+  en: "The model failed its checksum check. Download it again."
+  ru: "Контрольная сумма модели не совпала. Повторите загрузку"
+"download.timeout":
+  en: "request timed out"
+  ru: "истекло время ожидания"
+"download.connection":
+  en: "connection error"
+  ru: "ошибка соединения"
+"download.interrupted":
+  en: "Connection interrupted. Resume the download to continue."
+  ru: "Соединение прервано. Повторите загрузку, чтобы продолжить"
+"download.excess":
+  en: "The server sent more data than expected."
+  ru: "Сервер прислал больше данных, чем ожидалось"
+"download.disk":
+  en: "Couldn’t save model weights to disk."
+  ru: "Не удалось сохранить веса на диске"
+"download.incomplete":
+  en: "Download interrupted after %{count} of %{bytes} bytes."
+  ru: "Загрузка прервана. Скачано %{count} из %{bytes} байт"
+"catalog.small":
+  en: "Fast recognition for everyday dictation"
+  ru: "Для быстрой диктовки"
+"catalog.medium":
+  en: "More accurate recognition"
+  ru: "Для более точного распознавания"
+"catalog.large":
+  en: "For challenging speech and recordings"
+  ru: "Для сложных записей"
+"catalog.qwen":
+  en: "Small model for editing short phrases"
+  ru: "Для коротких фраз"
+"catalog.gemma":
+  en: "For editing longer passages"
+  ru: "Для длинных текстов"
+"prompt.default":
+  en: "Correct capitalization and punctuation. Remove filler words and accidental repetitions. Keep the original language, meaning, and form of address. Use conventional spelling for recognizable technical terms and acronyms. In a technical context, write “эй ай” as “AI”. Keep “ай” when it expresses pain. Return only the edited text."
+  ru: "Исправь регистр и пунктуацию, убери слова-паразиты и случайные повторы. Сохрани язык, смысл и обращение на «ты» или «вы». Узнаваемые технические термины и аббревиатуры пиши в общепринятой форме. В контексте технологий «эй ай», «эй-ай» и «эйай» пиши как AI. Например: «мы используем эй ай» → «Мы используем AI.» Междометие «ай» сохраняй: «ай больно» → «Ай, больно!» Верни только исправленную фразу."
+"prompt.empty":
+  en: "Enter an editing instruction."
+  ru: "Введите инструкцию для модели"
+"prompt.long":
+  en: "Shorten the instruction to 8,192 bytes."
+  ru: "Сократите инструкцию до 8192 байт"
+"prompt.nul":
+  en: "The instruction contains a null character."
+  ru: "Инструкция содержит недопустимый нулевой символ"
+"processing.input.invalid":
+  en: "The transcript is empty or too long."
+  ru: "Расшифровка пуста или слишком длинна"
+"processing.output.invalid":
+  en: "The provider’s reply is empty or too large."
+  ru: "Провайдер вернул пустой или слишком большой результат"
+"gguf.version":
+  en: "Unsupported GGUF version."
+  ru: "Неподдерживаемая версия GGUF"
+"gguf.header":
+  en: "Invalid GGUF header."
+  ru: "Некорректный заголовок GGUF"
+"gguf.parameter":
+  en: "Invalid GGUF parameter name."
+  ru: "Некорректное имя параметра GGUF"
+"gguf.split.type":
+  en: "Invalid GGUF split.count type."
+  ru: "Некорректный тип split.count"
+"gguf.multipart":
+  en: "Choose a single-file GGUF model."
+  ru: "Выберите GGUF, собранный в один файл"
+"gguf.array":
+  en: "GGUF metadata array is too large."
+  ru: "Слишком большой массив метаданных GGUF"
+"gguf.type":
+  en: "Unknown GGUF metadata type."
+  ru: "Неизвестный тип метаданных GGUF"
+"gguf.vocab":
+  en: "GGUF vocabulary is too large."
+  ru: "Слишком большой словарь GGUF"
+"gguf.string":
+  en: "GGUF string is too long."
+  ru: "Слишком длинная строка GGUF"
+"gguf.read":
+  en: "Couldn’t read the GGUF header."
+  ru: "Не удалось прочитать заголовок GGUF"
+"gguf.metadata":
+  en: "GGUF metadata is incomplete or too large."
+  ru: "Метаданные GGUF обрезаны или слишком велики"
+"whisper.weight.type":
+  en: "Unsupported whisper.cpp weight type."
+  ru: "Неподдерживаемый тип весов whisper.cpp"
+"whisper.quant":
+  en: "Unsupported whisper.cpp quantization."
+  ru: "Неподдерживаемая квантизация whisper.cpp"
+"whisper.weight.size":
+  en: "The weights don’t match the Whisper model parameters."
+  ru: "Размер весов не соответствует параметрам Whisper"
+"whisper.tensor.description":
+  en: "Invalid Whisper tensor description."
+  ru: "Некорректное описание тензора Whisper"
+"whisper.tensor.size":
+  en: "Invalid Whisper tensor size."
+  ru: "Некорректный размер тензора Whisper"
+"whisper.tensor.name":
+  en: "Invalid or duplicate Whisper tensor name."
+  ru: "Некорректное или повторное имя тензора Whisper"
+"whisper.weights.truncated":
+  en: "The Whisper weights file is incomplete."
+  ru: "Файл весов Whisper обрезан"
+"whisper.weights.missing":
+  en: "No Whisper weights found in this file."
+  ru: "В файле отсутствуют веса Whisper"
+"editor.start":
+  en: "Couldn’t start the local text engine."
+  ru: "Не удалось запустить локальный движок Voai"
+"editor.stdin":
+  en: "Couldn’t open the text engine’s input."
+  ru: "Не удалось открыть ввод движка"
+"editor.stdout":
+  en: "Couldn’t open the text engine’s output."
+  ru: "Не удалось открыть вывод движка"
+"editor.timeout":
+  en: "The local model took too long to respond."
+  ru: "Локальная модель не ответила вовремя"
+"editor.incomplete":
+  en: "The local model stopped before finishing."
+  ru: "Локальная модель не завершила обработку"
+"editor.pipe.input":
+  en: "The text engine stopped reading input."
+  ru: "Движок прервал ввод"
+"editor.pipe.output":
+  en: "The text engine stopped responding."
+  ru: "Движок прервал ответ"
+"cloud.incomplete":
+  en: "The provider stopped before finishing the edit."
+  ru: "Провайдер не завершил редактирование"
+"cloud.unreadable":
+  en: "Couldn’t read the provider’s reply."
+  ru: "Не удалось прочитать результат провайдера"
+"cloud.unknown.model":
+  en: "Unknown provider model."
+  ru: "Неизвестная модель провайдера"
+"cloud.no.key":
+  en: "Add your API key in settings."
+  ru: "Укажите API-ключ в настройках"
+"cloud.key.encoding":
+  en: "Invalid API key in Keychain."
+  ru: "Некорректный ключ в связке ключей"
+"cloud.invalid.response":
+  en: "Invalid response from the provider."
+  ru: "Некорректный ответ провайдера"
+"keychain.read":
+  en: "Keychain error (%{code})."
+  ru: "Связка ключей вернула ошибку %{code}"
+"keychain.write":
+  en: "Couldn’t update Keychain (%{code})."
+  ru: "Не удалось обновить связку ключей (%{code})"
+"keychain.macos":
+  en: "Keychain requires macOS."
+  ru: "Для связки ключей нужна macOS"
+"cloud.invalid.key":
+  en: "Invalid API key."
+  ru: "Некорректный API-ключ"
+"server.address":
+  en: "Enter a server address, such as http://127.0.0.1:1234/v1."
+  ru: "Введите адрес сервера, например http://127.0.0.1:1234/v1"
+"server.url":
+  en: "Use an HTTP or HTTPS address without credentials, a query, or a fragment."
+  ru: "Нужен адрес HTTP(S) без пароля, параметров или фрагмента"
+"server.loopback":
+  en: "The local server must run on localhost, 127.0.0.1, or [::1]."
+  ru: "Локальный сервер должен работать на localhost, 127.0.0.1 или [::1]"
+"server.key":
+  en: "Invalid server token in Keychain."
+  ru: "Некорректный токен в Связке ключей"
+"server.unauthorized":
+  en: "Access denied. Check the server token."
+  ru: "Сервер отказал в доступе. Проверьте токен."
+"server.http":
+  en: "The local server returned HTTP %{status}."
+  ru: "Локальный сервер вернул HTTP %{status}"
+"server.timeout":
+  en: "The local server took too long to respond."
+  ru: "Локальный сервер не ответил вовремя"
+"server.unavailable":
+  en: "Couldn’t reach the local server. Check the address and make sure the server is running."
+  ru: "Не удалось связаться с сервером. Проверьте адрес и убедитесь, что сервер запущен."
+"server.protocol":
+  en: "This server must support the OpenAI API. Check the /v1 path."
+  ru: "Нужен сервер с OpenAI-совместимым API. Проверьте путь /v1."
+"server.no.model":
+  en: "Choose a local server model."
+  ru: "Выберите модель локального сервера"

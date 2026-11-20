@@ -5,6 +5,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
+use voai_l10n::{tf, tr};
 
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
@@ -26,7 +27,7 @@ fn write_reply(w: &mut impl Write, reply: Result<&str, &str>) -> io::Result<()> 
         Err(text) => (1, text),
     };
     if text.len() > MAX_REPLY {
-        return Err(io::Error::other("Слишком длинный ответ Whisper"));
+        return Err(io::Error::other(tr("speech.reply.large")));
     }
     w.write_all(&[code])?;
     w.write_all(&(text.len() as u32).to_le_bytes())?;
@@ -40,7 +41,7 @@ fn read_reply(r: &mut impl Read) -> Result<String, String> {
         r.read_exact(&mut status)?;
         let size = read_u32(r)? as usize;
         if size > MAX_REPLY {
-            return Err(io::Error::other("Слишком длинный ответ Whisper"));
+            return Err(io::Error::other(tr("speech.reply.large")));
         }
         let mut bytes = vec![0; size];
         r.read_exact(&mut bytes)?;
@@ -50,14 +51,15 @@ fn read_reply(r: &mut impl Read) -> Result<String, String> {
     match read(r) {
         Ok((0, text)) => Ok(text),
         Ok((1, error)) => Err(error),
-        Ok(_) => Err("Неизвестный ответ речевого процесса".into()),
-        Err(e) => Err(format!("Связь с речевым процессом прервана: {e}")),
+        Ok(_) => Err(tr("speech.reply.invalid").into()),
+        Err(e) => Err(tf!("speech.worker.lost", e = e)),
     }
 }
 
 /// Verify imported weights in an isolated CPU-only context, without capturing audio.
 pub fn validate_model(model: &Path) -> Result<(), String> {
     let mut child = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
+        .env(voai_l10n::WORKER_LANGUAGE_ENV, voai_l10n::language())
         .arg("--speech-worker")
         .arg("--validate-v1")
         .arg(model)
@@ -65,19 +67,19 @@ pub fn validate_model(model: &Path) -> Result<(), String> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("Не удалось запустить проверку модели Whisper: {e}"))?;
+        .map_err(|e| tf!("speech.check.start", e = e))?;
     let deadline = Instant::now() + Duration::from_secs(90);
     loop {
         match child.try_wait() {
             Ok(Some(status)) if status.success() => return Ok(()),
-            Ok(Some(_)) => return Err("Движок Whisper не смог загрузить выбранную модель".into()),
+            Ok(Some(_)) => return Err(tr("speech.check.load").into()),
             Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(40)),
             result => {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(match result {
                     Err(e) => e.to_string(),
-                    _ => "Истекло время проверки модели Whisper".into(),
+                    _ => tr("speech.check.timeout").into(),
                 });
             }
         }
@@ -86,9 +88,9 @@ pub fn validate_model(model: &Path) -> Result<(), String> {
 
 pub fn worker_main() -> Result<(), String> {
     let mut args = std::env::args_os().skip(2);
-    let model = args.next().ok_or("Не задан путь к модели")?;
+    let model = args.next().ok_or(tr("speech.path.missing"))?;
     if model == "--validate-v1" {
-        let path = args.next().ok_or("Не задан путь к модели")?;
+        let path = args.next().ok_or(tr("speech.path.missing"))?;
         whisper_rs::install_logging_hooks();
         let mut config = WhisperContextParameters::default();
         config.use_gpu(false);
@@ -119,17 +121,14 @@ fn run_worker(
     let mut protocol = [0; 8];
     input.read_exact(&mut protocol)?;
     if &protocol != PROTOCOL {
-        return Err(io::Error::other("Несовместимая версия речевого процесса"));
+        return Err(io::Error::other(tr("speech.protocol")));
     }
 
     whisper_rs::install_logging_hooks();
     let ctx = match WhisperContext::new_with_params(model, WhisperContextParameters::default()) {
         Ok(ctx) => ctx,
         Err(err) => {
-            return write_reply(
-                &mut output,
-                Err(&format!("Не удалось открыть речевую модель: {err}")),
-            );
+            return write_reply(&mut output, Err(&tf!("speech.open.detail", err = err)));
         }
     };
     let mut state = None;
@@ -138,13 +137,13 @@ fn run_worker(
         let mut kind = [0u8];
         match input.read_exact(&mut kind) {
             Ok(()) if kind[0] < 2 => {}
-            Ok(()) => return Err(io::Error::other("Неизвестная команда распознавания")),
+            Ok(()) => return Err(io::Error::other(tr("speech.command"))),
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(()),
             Err(e) => return Err(e),
         }
         let size = read_u32(&mut input)? as usize;
         if size > MAX_SAMPLES {
-            return Err(io::Error::other("Превышена максимальная длина фразы"));
+            return Err(io::Error::other(tr("speech.limit.samples")));
         }
         // Both processes are slices of the same macOS binary and share the float ABI.
         let mut samples = vec![0.0f32; size];
@@ -203,7 +202,7 @@ fn decode(
     };
     state
         .full(params, samples)
-        .map_err(|e| format!("Не удалось распознать речь: {e}"))?;
+        .map_err(|e| tf!("speech.decode.error", e = e))?;
     let mut text = String::new();
     for segment in state.as_iter().filter(|s| s.no_speech_probability() < 0.8) {
         text.push_str(&segment.to_str_lossy().map_err(|e| e.to_string())?);
@@ -239,6 +238,7 @@ pub(super) struct Worker {
     model: PathBuf,
     stamp: FileStamp,
     language: Option<String>,
+    interface_language: &'static str,
     child: Child,
     tx: mpsc::Sender<DecodeRequest>,
     rx: mpsc::Receiver<Result<String, String>>,
@@ -257,19 +257,21 @@ impl Worker {
         model: &Path,
         language: Option<&str>,
     ) -> Result<Self, String> {
-        let stamp = FileStamp::read(model)
-            .map_err(|e| format!("Не удалось открыть речевую модель: {e}"))?;
+        let stamp = FileStamp::read(model).map_err(|e| tf!("speech.open.error", e = e))?;
+        let interface_language = voai_l10n::language();
         let idle = IDLE.lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some((_, mut worker)) = idle
             && worker.executable == executable
             && worker.model == model
             && worker.stamp == stamp
+            && worker.interface_language == interface_language
             && worker.language.as_deref() == language
             && matches!(worker.child.try_wait(), Ok(None))
         {
             return Ok(worker);
         }
         let mut child = Command::new(executable)
+            .env(voai_l10n::WORKER_LANGUAGE_ENV, interface_language)
             .arg("--speech-worker")
             .arg(model)
             .arg(language.unwrap_or("auto"))
@@ -277,7 +279,7 @@ impl Worker {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|e| format!("Не удалось запустить речевой процесс: {e}"))?;
+            .map_err(|e| tf!("speech.worker.start", e = e))?;
         let mut input = BufWriter::new(child.stdin.take().expect("piped stdin"));
         let mut output = BufReader::new(child.stdout.take().expect("piped stdout"));
         let (tx, requests) = mpsc::channel::<DecodeRequest>();
@@ -314,6 +316,7 @@ impl Worker {
             executable: executable.into(),
             model: model.into(),
             stamp,
+            interface_language,
             language: language.map(Into::into),
             child,
             tx,
@@ -324,14 +327,14 @@ impl Worker {
     pub(super) fn request(&self, request: DecodeRequest) -> Result<(), String> {
         self.tx
             .send(request)
-            .map_err(|_| "Речевой процесс завершился".into())
+            .map_err(|_| tr("speech.worker.exited").into())
     }
 
     pub(super) fn response(&self) -> Result<Option<String>, String> {
         match self.rx.try_recv() {
             Ok(result) => result.map(Some),
             Err(mpsc::TryRecvError::Empty) => Ok(None),
-            Err(mpsc::TryRecvError::Disconnected) => Err("Речевой процесс завершился".into()),
+            Err(mpsc::TryRecvError::Disconnected) => Err(tr("speech.worker.exited").into()),
         }
     }
 

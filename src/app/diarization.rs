@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+use voai_l10n::tr;
 
 use voai_models::{ModelFile, ModelStore};
 
@@ -57,10 +58,10 @@ pub(super) fn download(
         done += model.bytes;
     }
     if cancel.load(Ordering::Acquire) {
-        return Err("Загрузка отменена".into());
+        return Err(tr("app.downloads.cancelled").into());
     }
     let kit = dir.join(KIT);
-    publish(dir, &kit).map_err(|_| "Не удалось сохранить комплект моделей".to_owned())?;
+    publish(dir, &kit).map_err(|_| tr("app.speakers.save_models").to_owned())?;
     progress(100);
     Ok(kit)
 }
@@ -91,10 +92,10 @@ pub(super) fn validate(dir: &Path) -> Result<(), String> {
     if !MODELS.iter().all(|model| {
         fs::metadata(dir.join(model.filename)).is_ok_and(|m| m.is_file() && m.len() > 0)
     }) {
-        return Err("Выберите папку с файлами segmentation.onnx и embedding.onnx".into());
+        return Err(tr("app.speakers.select_folder").into());
     }
     // Untrusted local ONNX files are opened only by an isolated helper.
-    let launch_error = || "Не удалось запустить проверку моделей".to_owned();
+    let launch_error = || tr("app.speakers.start_check").to_owned();
     let exe = std::env::current_exe()
         .map_err(|_| launch_error())?
         .with_file_name("voai-diarize");
@@ -111,15 +112,13 @@ pub(super) fn validate(dir: &Path) -> Result<(), String> {
         match child.try_wait() {
             Ok(Some(status)) if status.success() => return Ok(()),
             Ok(Some(_)) => {
-                return Err(
-                    "Нужны совместимые ONNX-модели сегментации и голоса для sherpa-onnx".into(),
-                );
+                return Err(tr("app.speakers.incompatible").into());
             }
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
             _ => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err("Не удалось проверить модели спикеров".into());
+                return Err(tr("app.speakers.check_failed").into());
             }
         }
     }

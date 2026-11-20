@@ -5,6 +5,7 @@ use std::{
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
 };
+use voai_l10n::tr;
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileLine {
@@ -25,8 +26,29 @@ pub struct FileDocument {
     pub source: PathBuf,
     pub speakers: BTreeMap<u32, String>,
     pub lines: Vec<FileLine>,
-    pub warning: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) notices: Vec<Notice>,
+    #[serde(default, rename = "warning", skip_serializing_if = "Option::is_none")]
+    pub(super) legacy_warning: Option<String>,
     pub(super) source_stamp: SourceStamp,
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum Notice {
+    NoSpeech,
+    SpeakersUnavailable,
+    EditingInterrupted,
+}
+
+impl Notice {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::NoSpeech => tr("app.files.no_speech"),
+            Self::SpeakersUnavailable => tr("app.files.speakers_skipped"),
+            Self::EditingInterrupted => tr("app.files.remaining_original"),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,9 +62,11 @@ pub(super) struct SourceStamp {
 
 impl SourceStamp {
     pub fn read(path: &Path) -> Result<Self, String> {
-        let m = path.metadata().map_err(|_| "Исходный файл недоступен.")?;
+        let m = path
+            .metadata()
+            .map_err(|_| tr("app.files.source_unavailable"))?;
         if !m.is_file() {
-            return Err("Выберите аудио- или видеофайл.".into());
+            return Err(tr("app.files.choose_media").into());
         }
         Ok(Self {
             bytes: m.len(),
@@ -146,6 +170,43 @@ fn timestamp(ms: u64, millis: bool) -> String {
 }
 
 impl FileDocument {
+    pub fn warning_text(&self) -> Option<String> {
+        let mut labels: Vec<_> = self.notices.iter().map(Notice::label).collect();
+        labels.extend(self.legacy_warning.as_deref());
+        (!labels.is_empty()).then(|| labels.join(" "))
+    }
+
+    /// Before 1.6 these notices were stored as Russian display strings. Only
+    /// interpret known system messages; retain anything else verbatim.
+    pub(super) fn migrate_warnings(&mut self) {
+        let Some(old) = self.legacy_warning.take() else {
+            return;
+        };
+        let mut rest = old
+            .trim()
+            .trim_start_matches("Расшифровано без определения спикеров.")
+            .trim();
+        for (text, notice) in [
+            ("Речь в файле не обнаружена.", Notice::NoSpeech),
+            (
+                "Не удалось определить спикеров. Текст и таймкоды сохранены.",
+                Notice::SpeakersUnavailable,
+            ),
+            (
+                "Обработка прервалась. У оставшихся реплик сохранён исходный текст.",
+                Notice::EditingInterrupted,
+            ),
+        ] {
+            if let Some(tail) = rest.strip_prefix(text) {
+                self.notices.push(notice);
+                rest = tail.trim_start();
+            }
+        }
+        if !rest.is_empty() {
+            self.legacy_warning = Some(rest.to_owned());
+        }
+    }
+
     /// Join the recognition chunks into reading paragraphs. Keep the timed lines
     /// intact for playback, speaker corrections and subtitle export.
     pub fn paragraphs(&self) -> Vec<String> {
@@ -218,9 +279,12 @@ impl FileDocument {
 
     pub(super) fn assign(&mut self, line: usize, speaker: Option<u32>) -> Result<(), String> {
         if speaker.is_some_and(|s| !self.speakers.contains_key(&s)) {
-            return Err("Спикер недоступен.".into());
+            return Err(tr("app.speakers.unavailable").into());
         }
-        let row = self.lines.get_mut(line).ok_or("Реплика недоступна.")?;
+        let row = self
+            .lines
+            .get_mut(line)
+            .ok_or(tr("app.files.line_unavailable"))?;
         row.speaker = speaker;
         row.review = false;
         Ok(())
@@ -229,7 +293,7 @@ impl FileDocument {
     pub(super) fn set_name(&mut self, id: u32, name: String) -> Result<(), String> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 80 || name.chars().any(char::is_control) {
-            return Err("Введите имя спикера длиной до 80 знаков.".into());
+            return Err(tr("app.speakers.name_limit").into());
         }
         self.speakers.insert(id, name.to_owned());
         Ok(())

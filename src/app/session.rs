@@ -13,6 +13,7 @@ use std::{
     thread,
     time::Instant,
 };
+use voai_l10n::tr;
 use voai_models::{ModelStore, Provider};
 use voai_speech::{Event, Recording};
 
@@ -67,7 +68,7 @@ pub(super) fn provider(name: &str) -> Result<Provider, String> {
     match name {
         "OpenAI" => Ok(Provider::OpenAI),
         "Anthropic" => Ok(Provider::Anthropic),
-        _ => Err("Неизвестный провайдер".into()),
+        _ => Err(tr("app.editing.unknown_provider").into()),
     }
 }
 
@@ -180,7 +181,7 @@ impl Session {
                 self.phase = Phase::RecoverFocus;
                 self.message = match reason {
                     InsertionError::Unavailable(e) => e,
-                    _ => "Поле или выделение изменилось.".into(),
+                    _ => tr("app.dictation.target_changed").into(),
                 };
             }
         }
@@ -282,7 +283,7 @@ impl Session {
             let response = match rx.try_recv() {
                 Ok(result) => result,
                 Err(mpsc::TryRecvError::Empty) => return None,
-                Err(mpsc::TryRecvError::Disconnected) => Err("Обработка прервалась.".into()),
+                Err(mpsc::TryRecvError::Disconnected) => Err(tr("app.editing.interrupted").into()),
             };
             self.processor = None;
             let mut entry = self.history_draft.take();
@@ -301,7 +302,7 @@ impl Session {
                     self.phase = Phase::RecoverText;
                     self.message = other
                         .err()
-                        .unwrap_or_else(|| "Модель вернула пустой текст.".into());
+                        .unwrap_or_else(|| tr("app.editing.empty_result").into());
                 }
             }
             return entry;

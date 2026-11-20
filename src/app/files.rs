@@ -16,6 +16,7 @@ use std::{
     },
     thread,
 };
+use voai_l10n::tr;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct FileSummary {
@@ -25,7 +26,7 @@ pub struct FileSummary {
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct FileProgress {
-    pub stage: String,
+    pub stage_key: &'static str,
     pub percent: u8,
     pub cancellable: bool,
 }
@@ -146,7 +147,7 @@ enum ResultView {
 
 enum Update {
     Progress(FileProgress),
-    Done(Result<ResultView, String>),
+    Done(Box<Result<ResultView, String>>),
 }
 
 struct Job {
@@ -185,24 +186,20 @@ impl Files {
             playback: None,
         };
         let models = this.model_dir.clone();
-        this.start(
-            "Открытие библиотеки",
-            false,
-            move |dir, _| {
-                let db = store::Store::open(dir)?;
-                Ok(ResultView::Library(
-                    db.list()?,
-                    db.pipeline_options()?,
-                    super::diarization::installed(&models),
-                ))
-            },
-        );
+        this.start("app.files.opening_library", false, move |dir, _| {
+            let db = store::Store::open(dir)?;
+            Ok(ResultView::Library(
+                db.list()?,
+                db.pipeline_options()?,
+                super::diarization::installed(&models),
+            ))
+        });
         this
     }
 
     fn start(
         &mut self,
-        stage: &str,
+        stage_key: &'static str,
         cancellable: bool,
         task: impl FnOnce(&Path, &Work) -> Result<ResultView, String> + Send + 'static,
     ) {
@@ -215,11 +212,11 @@ impl Files {
         let dir = self.dir.clone();
         let worker = thread::spawn(move || {
             let result = task(&dir, &ctx);
-            ctx.notify(Update::Done(result));
+            ctx.notify(Update::Done(Box::new(result)));
         });
         self.view.error = None;
         self.view.progress = Some(FileProgress {
-            stage: stage.into(),
+            stage_key,
             percent: 0,
             cancellable,
         });
@@ -259,7 +256,7 @@ impl Files {
         store: &voai_models::ModelStore,
     ) -> Result<BotPipeline, String> {
         if !self.options_loaded {
-            return Err("Настройки расшифровки пока недоступны. Повторите отправку позже.".into());
+            return Err(tr("app.files.options_unavailable").into());
         }
         Ok(BotPipeline {
             tools: self.tools.clone(),
@@ -284,26 +281,18 @@ impl Files {
     }
 
     fn persist(&mut self, mut doc: FileDocument) {
-        self.start(
-            "Сохранение расшифровки",
-            false,
-            move |dir, _| {
-                let db = store::Store::open(dir)?;
-                db.save(&mut doc)?;
-                Ok(ResultView::Saved(doc, db.list()?))
-            },
-        );
+        self.start("app.files.saving", false, move |dir, _| {
+            let db = store::Store::open(dir)?;
+            db.save(&mut doc)?;
+            Ok(ResultView::Saved(doc, db.list()?))
+        });
     }
 
     fn select(&mut self, choice: FileOptions, downloaded: Option<PathBuf>) {
-        self.start(
-            "Сохранение настроек",
-            false,
-            move |dir, _| {
-                store::Store::open(dir)?.save_choice(&choice)?;
-                Ok(ResultView::Selected(choice, downloaded))
-            },
-        );
+        self.start("app.files.saving_settings", false, move |dir, _| {
+            store::Store::open(dir)?.save_choice(&choice)?;
+            Ok(ResultView::Selected(choice, downloaded))
+        });
     }
 
     pub fn poll(&mut self) {
@@ -314,7 +303,7 @@ impl Files {
                 Ok(Some(status)) if status.success() => self.stop(),
                 _ => {
                     self.stop();
-                    self.view.error = Some("Не удалось воспроизвести исходную запись.".into());
+                    self.view.error = Some(tr("app.files.cannot_play").into());
                 }
             }
         }
@@ -324,9 +313,11 @@ impl Files {
                     self.view.progress = Some(progress);
                     continue;
                 }
-                Ok(Update::Done(r)) => r,
+                Ok(Update::Done(result)) => *result,
                 Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => Err("Задача была прервана.".into()),
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    Err(tr("app.files.task_interrupted").into())
+                }
             };
             self.job = None;
             self.view.progress = None;
@@ -380,7 +371,7 @@ impl Files {
                 self.cancel();
                 return Ok(());
             }
-            _ if self.job.is_some() => return Err("Сначала завершите текущую задачу.".into()),
+            _ if self.job.is_some() => return Err(tr("app.files.task_busy").into()),
             _ => {}
         }
         self.view.error = None;
@@ -393,18 +384,16 @@ impl Files {
                 self.stop();
                 let tools = self.tools.clone();
                 let voices = self.selected_voices().filter(|_| options.identify_speakers);
-                self.start("Подготовка", true, move |_, work| {
+                self.start("app.files.preparing", true, move |_, work| {
                     let pipeline = options.pipeline(&settings, &store, voices)?;
                     job::import(&tools, source, &pipeline, work).map(ResultView::Imported)
                 });
             }
             FileCommand::Open(id) => {
                 self.stop();
-                self.start(
-                    "Открытие расшифровки",
-                    false,
-                    move |dir, _| store::Store::open(dir)?.load(id).map(ResultView::Document),
-                );
+                self.start("app.files.opening", false, move |dir, _| {
+                    store::Store::open(dir)?.load(id).map(ResultView::Document)
+                });
             }
             FileCommand::SetSpeech(id) => {
                 self.select(
@@ -436,51 +425,45 @@ impl Files {
             FileCommand::InstallVoices => {
                 let options = self.options.clone();
                 let models = self.model_dir.clone();
-                self.start(
-                    "Загрузка моделей спикеров",
-                    true,
-                    move |_, work| {
-                        let path = super::diarization::download(&models, &work.cancelled, |p| {
-                            work.progress("Загрузка моделей спикеров", p)
-                        })?;
-                        Ok(ResultView::Voices(
-                            FileOptions {
-                                use_local: false,
-                                identify_speakers: true,
-                                ..options
-                            },
-                            Some(path),
-                        ))
-                    },
-                );
+                self.start("app.speakers.downloading", true, move |_, work| {
+                    let path = super::diarization::download(&models, &work.cancelled, |p| {
+                        work.progress("app.speakers.downloading", p)
+                    })?;
+                    Ok(ResultView::Voices(
+                        FileOptions {
+                            use_local: false,
+                            identify_speakers: true,
+                            ..options
+                        },
+                        Some(path),
+                    ))
+                });
             }
             FileCommand::ConnectVoices(folder) => {
                 let options = self.options.clone();
                 let d = self.downloaded.clone();
-                self.start(
-                    "Проверка моделей спикеров",
-                    true,
-                    move |_, _| {
-                        let folder = folder.canonicalize().map_err(|_| "Папка недоступна.")?;
-                        super::diarization::validate(&folder)?;
-                        Ok(ResultView::Voices(
-                            FileOptions {
-                                folder: Some(folder),
-                                use_local: true,
-                                identify_speakers: true,
-                                ..options
-                            },
-                            d,
-                        ))
-                    },
-                );
+                self.start("app.speakers.checking", true, move |_, _| {
+                    let folder = folder
+                        .canonicalize()
+                        .map_err(|_| tr("app.files.folder_unavailable"))?;
+                    super::diarization::validate(&folder)?;
+                    Ok(ResultView::Voices(
+                        FileOptions {
+                            folder: Some(folder),
+                            use_local: true,
+                            identify_speakers: true,
+                            ..options
+                        },
+                        d,
+                    ))
+                });
             }
             FileCommand::UseDownloadedVoices | FileCommand::UseLocalVoices => {
                 let use_local = matches!(cmd, FileCommand::UseLocalVoices);
                 if (use_local && self.view.voices_local.is_none())
                     || (!use_local && self.downloaded.is_none())
                 {
-                    return Err("Подключите или скачайте комплект моделей.".into());
+                    return Err(tr("app.speakers.choose_models").into());
                 }
                 self.select(
                     FileOptions {
@@ -493,19 +476,27 @@ impl Files {
             }
             FileCommand::Play(index) => {
                 if !allow_play {
-                    return Err("Сначала завершите диктовку.".into());
+                    return Err(tr("app.dictation.busy").into());
                 }
                 let was_playing = self.view.playing == Some(index);
                 self.stop();
                 if was_playing {
                     return Ok(());
                 }
-                let doc = self.view.document.as_ref().ok_or("Выберите расшифровку.")?;
-                let line = doc.lines.get(index).ok_or("Реплика недоступна.")?;
+                let doc = self
+                    .view
+                    .document
+                    .as_ref()
+                    .ok_or(tr("app.files.select_transcript"))?;
+                let line = doc
+                    .lines
+                    .get(index)
+                    .ok_or(tr("app.files.line_unavailable"))?;
                 if SourceStamp::read(&doc.source)? != doc.source_stamp {
-                    return Err("Исходный файл изменился. Воспроизведение недоступно.".into());
+                    return Err(tr("app.files.playback_source_changed").into());
                 }
                 let player = Command::new(&self.tools.media)
+                    .env(voai_l10n::WORKER_LANGUAGE_ENV, voai_l10n::language())
                     .arg("play")
                     .arg(&doc.source)
                     .arg(line.start_ms.to_string())
@@ -514,20 +505,20 @@ impl Files {
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .spawn()
-                    .map_err(|_| "Не удалось начать воспроизведение.")?;
+                    .map_err(|_| tr("app.audio.start_playback"))?;
                 self.playback = Some(ChildGuard(player));
                 self.view.playing = Some(index);
             }
             FileCommand::Export { path, format } => {
-                let doc = self.view.document.clone().ok_or("Выберите расшифровку.")?;
-                self.start(
-                    "Экспорт расшифровки",
-                    false,
-                    move |dir, _| {
-                        store::export(&path, format, &doc, dir.parent().unwrap_or(dir))?;
-                        Ok(ResultView::Exported(path))
-                    },
-                );
+                let doc = self
+                    .view
+                    .document
+                    .clone()
+                    .ok_or(tr("app.files.select_transcript"))?;
+                self.start("app.files.exporting", false, move |dir, _| {
+                    store::export(&path, format, &doc, dir.parent().unwrap_or(dir))?;
+                    Ok(ResultView::Exported(path))
+                });
             }
             change @ (FileCommand::Assign { .. }
             | FileCommand::Rename { .. }
@@ -537,12 +528,12 @@ impl Files {
                     .document
                     .as_deref()
                     .cloned()
-                    .ok_or("Выберите расшифровку.")?;
+                    .ok_or(tr("app.files.select_transcript"))?;
                 match change {
                     FileCommand::Assign { line, speaker } => doc.assign(line, speaker)?,
                     FileCommand::Rename { speaker, name } => {
                         if !doc.speakers.contains_key(&speaker) {
-                            return Err("Спикер недоступен.".into());
+                            return Err(tr("app.speakers.unavailable").into());
                         }
                         doc.set_name(speaker, name)?;
                     }
@@ -554,7 +545,7 @@ impl Files {
                             .copied()
                             .unwrap_or(0)
                             .checked_add(1)
-                            .ok_or("Слишком много спикеров.")?;
+                            .ok_or(tr("app.speakers.limit"))?;
                         doc.set_name(id, name)?;
                         doc.assign(line, Some(id))?;
                     }

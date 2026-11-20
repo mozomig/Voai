@@ -1,3 +1,4 @@
+use voai_l10n::tr;
 mod dictation;
 mod files;
 mod history;
@@ -30,11 +31,11 @@ pub(super) enum Page {
 impl Page {
     fn title(self) -> &'static str {
         match self {
-            Self::Dictation => "Диктовка",
-            Self::Models => "Модели",
-            Self::Processing => "Обработка",
-            Self::History => "История",
-            Self::Files => "Расшифровка",
+            Self::Dictation => tr("ui.page.dictation"),
+            Self::Models => tr("ui.page.models"),
+            Self::Processing => tr("ui.page.editing"),
+            Self::History => tr("ui.page.history"),
+            Self::Files => tr("ui.page.transcription"),
             Self::Telegram => "Telegram",
         }
     }
@@ -52,10 +53,10 @@ impl Page {
 
 pub(super) fn mode_title(mode: Mode) -> &'static str {
     match mode {
-        Mode::Off => "Выкл.",
-        Mode::Local => "Из файла",
-        Mode::Server => "Локальный сервер",
-        Mode::Cloud => "Облако",
+        Mode::Off => tr("ui.mode.off"),
+        Mode::Local => tr("ui.mode.file"),
+        Mode::Server => tr("ui.mode.server"),
+        Mode::Cloud => tr("ui.mode.cloud"),
     }
 }
 
@@ -86,7 +87,7 @@ pub(super) struct Settings {
     prompt_needs_layout: bool,
     server_url: Entity<InputState>,
     show_server_key: bool,
-    file_dialog_error: Option<String>,
+    file_dialog_error: Option<&'static str>,
     last_test: Option<u64>,
     selection_anchor: Option<(u64, std::ops::Range<usize>)>,
     edit_revision: u64,
@@ -101,11 +102,12 @@ impl Settings {
         let test = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line(true)
-                .placeholder("Нажмите здесь и попробуйте диктовать")
+                .placeholder(tr("ui.test.placeholder"))
         });
         let key = cx.new(|cx| InputState::new(window, cx).masked(true));
         let telegram_token = Self::new_telegram_token(window, cx);
-        let telegram_port = cx.new(|cx| InputState::new(window, cx).placeholder("Порт"));
+        let telegram_port =
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("ui.telegram.port")));
         cx.subscribe_in(
             &telegram_port,
             window,
@@ -229,6 +231,18 @@ impl Settings {
             self.selection_anchor.clone_from(&selection);
         }
         self.set_test_ready(selection.is_some() && selection == self.selection_anchor);
+    }
+
+    pub(super) fn refresh_language(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.set_window_title(tr("ui.settings.title"));
+        for (field, key) in [
+            (&self.test, "ui.test.placeholder"),
+            (&self.telegram_token, "ui.telegram.paste_token"),
+            (&self.telegram_port, "ui.telegram.port"),
+        ] {
+            field.update(cx, |input, cx| input.set_placeholder(tr(key), window, cx));
+        }
+        self.files_ui.refresh_language(window, cx);
     }
 
     pub(super) fn sync(&mut self, snapshot: Snapshot, window: &mut Window, cx: &mut Context<Self>) {
@@ -384,7 +398,7 @@ impl Settings {
         } else {
             let mods = event.keystroke.modifiers;
             if !(mods.control || mods.alt || mods.platform) {
-                self.shortcut_error = Some("Добавьте ⌥, ⌘ или ⌃.");
+                self.shortcut_error = Some("ui.shortcut.invalid");
             } else {
                 let mut parts = Vec::new();
                 for (pressed, label) in [
@@ -427,7 +441,7 @@ impl Settings {
                 ]
                 .map(|page| {
                     let selected = page == self.page;
-                    Button::new(page.title())
+                    Button::new(page.icon())
                         .ghost()
                         .w_full()
                         .justify_start()
@@ -486,15 +500,15 @@ impl Settings {
             .child(control)
     }
 
-    fn picker(
+    fn picker<T: Clone + PartialEq + 'static>(
         &self,
         id: &'static str,
         title: String,
-        choices: Vec<(String, String)>,
-        current: String,
-        command: fn(String) -> Command,
+        choices: Vec<(String, T)>,
+        current: T,
+        command: fn(T) -> Command,
         p: Palette,
-    ) -> impl IntoElement + use<> {
+    ) -> impl IntoElement + use<T> {
         let engine = self.engine.clone();
         Button::new(id)
             .small()
@@ -634,11 +648,12 @@ impl Render for Settings {
                                                 text(self.snapshot.message.clone(), 12., p.ink)
                                                     .flex_1(),
                                             )
-                                            .child(button("dismiss", "Закрыть", p).on_click(
-                                                cx.listener(|this, _, _, _| {
-                                                    this.send(Command::DismissMessage)
-                                                }),
-                                            )),
+                                            .child(
+                                                button("dismiss", tr("ui.action.close"), p)
+                                                    .on_click(cx.listener(|this, _, _, _| {
+                                                        this.send(Command::DismissMessage)
+                                                    })),
+                                            ),
                                     )
                                 },
                             )

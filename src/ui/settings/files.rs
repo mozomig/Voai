@@ -6,6 +6,7 @@ use objc2::MainThreadMarker;
 use objc2_app_kit::{NSModalResponseCancel, NSModalResponseOK, NSSavePanel};
 use objc2_foundation::{NSString, NSURL};
 use std::{path::Path, sync::Arc};
+use voai_l10n::{tf, tr};
 
 mod dialogue;
 mod setup;
@@ -29,7 +30,7 @@ pub(super) struct FileControls {
 
 impl FileControls {
     pub(super) fn new(window: &mut Window, cx: &mut Context<Settings>) -> Self {
-        let editor = cx.new(|cx| InputState::new(window, cx).placeholder("Имя спикера"));
+        let editor = cx.new(|cx| InputState::new(window, cx).placeholder(tr("ui.speaker.name")));
         cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {
             InputEvent::PressEnter { .. } => this.save_speaker(window, cx),
             InputEvent::Change => cx.notify(),
@@ -46,6 +47,14 @@ impl FileControls {
             editing: None,
             dialog_error: None,
         }
+    }
+
+    pub(super) fn refresh_language(&self, window: &mut Window, cx: &mut Context<Settings>) {
+        self.editor.update(cx, |input, cx| {
+            input.set_placeholder(tr("ui.speaker.name"), window, cx)
+        });
+        let count = self.list.item_count();
+        self.list.splice(0..count, count);
     }
 
     pub(super) fn sync(&mut self, previous: &FileView, next: &FileView) {
@@ -98,7 +107,7 @@ impl Settings {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Расшифровать".into()),
+            prompt: Some(tr("ui.files.transcribe").into()),
         });
         cx.spawn(async move |view, cx| {
             let result = picker.await;
@@ -110,7 +119,7 @@ impl Settings {
                         }
                     }
                     Ok(Ok(None)) => {}
-                    _ => view.files_ui.dialog_error = Some("Не удалось открыть окно выбора файла."),
+                    _ => view.files_ui.dialog_error = Some("ui.dialog.open_failed"),
                 }
                 cx.notify();
             });
@@ -173,7 +182,7 @@ impl Settings {
                         view.send(Command::File(FileCommand::Export { path, format }));
                     }
                     Ok(Ok(_)) => {}
-                    _ => view.files_ui.dialog_error = Some("Не удалось открыть окно сохранения."),
+                    _ => view.files_ui.dialog_error = Some("ui.dialog.save_failed"),
                 }
                 cx.notify();
             });
@@ -193,12 +202,16 @@ impl Settings {
             .child(
                 row()
                     .gap_2()
-                    .child(text(progress.stage.clone(), 14., p.ink).flex_1())
+                    .child(text(tr(progress.stage_key), 14., p.ink).flex_1())
                     .child(text(format!("{}%", progress.percent), 12., p.muted))
                     .when(progress.cancellable, |r| {
-                        r.child(button("file-cancel", "Отменить", p).on_click(cx.listener(
-                            |this, _, _, _| this.send(Command::File(FileCommand::Cancel)),
-                        )))
+                        r.child(
+                            button("file-cancel", tr("ui.action.cancel_progress"), p).on_click(
+                                cx.listener(|this, _, _, _| {
+                                    this.send(Command::File(FileCommand::Cancel))
+                                }),
+                            ),
+                        )
                     }),
             )
             .child(track(f32::from(progress.percent) / 100., p))
@@ -212,7 +225,11 @@ impl Settings {
             .w_full()
             .gap(px(10.))
             .children(files.error.as_ref().map(|e| text(e.clone(), 12., p.error)))
-            .children(self.files_ui.dialog_error.map(|e| text(e, 12., p.error)))
+            .children(
+                self.files_ui
+                    .dialog_error
+                    .map(|e| text(tr(e), 12., p.error)),
+            )
             .children(
                 files
                     .exported
@@ -220,7 +237,7 @@ impl Settings {
                     .and_then(|path| path.file_name())
                     .map(|name| {
                         text(
-                            format!("Сохранено · {}", name.to_string_lossy()),
+                            tf!("ui.files.saved", name = name.to_string_lossy()),
                             12.,
                             p.muted,
                         )
@@ -232,7 +249,7 @@ impl Settings {
         let configuring = files.document.is_none() || self.files_ui.configuring;
         let mut actions = row().gap_2();
         if !configuring {
-            actions = actions.child(button("file-new", "Новая расшифровка", p).on_click(
+            actions = actions.child(button("file-new", tr("ui.files.new"), p).on_click(
                 cx.listener(|this, _, _, cx| {
                     this.send(Command::File(FileCommand::Stop));
                     this.files_ui.configure();
@@ -244,27 +261,29 @@ impl Settings {
             let library = files.library.clone();
             let selected = files.document.as_ref().map(|d| d.id.clone());
             let owner = cx.entity().downgrade();
-            actions = actions.child(button("file-library", "Сохранённые ▾", p).dropdown_menu(
-                move |mut menu, _, _| {
-                    menu = menu.scrollable(true).max_h(px(280.)).max_w(px(320.));
-                    for doc in library.iter() {
-                        let id = doc.id.clone();
-                        let owner = owner.clone();
-                        menu = menu.item(
-                            PopupMenuItem::new(doc.title.clone())
-                                .checked(selected.as_ref() == Some(&id))
-                                .on_click(move |_, _, cx| {
-                                    let _ = owner.update(cx, |view, cx| {
-                                        view.files_ui.configuring = false;
-                                        view.send(Command::File(FileCommand::Open(id.clone())));
-                                        cx.notify();
-                                    });
-                                }),
-                        );
-                    }
-                    menu
-                },
-            ));
+            actions = actions.child(
+                button("file-library", tr("ui.files.saved_list"), p).dropdown_menu(
+                    move |mut menu, _, _| {
+                        menu = menu.scrollable(true).max_h(px(280.)).max_w(px(320.));
+                        for doc in library.iter() {
+                            let id = doc.id.clone();
+                            let owner = owner.clone();
+                            menu = menu.item(
+                                PopupMenuItem::new(doc.title.clone())
+                                    .checked(selected.as_ref() == Some(&id))
+                                    .on_click(move |_, _, cx| {
+                                        let _ = owner.update(cx, |view, cx| {
+                                            view.files_ui.configuring = false;
+                                            view.send(Command::File(FileCommand::Open(id.clone())));
+                                            cx.notify();
+                                        });
+                                    }),
+                            );
+                        }
+                        menu
+                    },
+                ),
+            );
         }
         if !files.library.is_empty() || !configuring {
             body = body.child(actions);
@@ -277,18 +296,19 @@ impl Settings {
         };
         let plain = doc.speakers.is_empty() && !self.files_ui.timed;
         let owner = cx.entity().downgrade();
-        let export = button("file-export", "Экспорт ▾", p).dropdown_menu(move |mut menu, _, _| {
-            for (label, format) in [
-                ("Текст (.txt)", ExportFormat::Txt),
-                ("Субтитры (.srt)", ExportFormat::Srt),
-            ] {
-                let owner = owner.clone();
-                menu = menu.item(PopupMenuItem::new(label).on_click(move |_, _, cx| {
-                    let _ = owner.update(cx, |this, cx| this.export_media(format, cx));
-                }));
-            }
-            menu
-        });
+        let export =
+            button("file-export", tr("ui.files.export"), p).dropdown_menu(move |mut menu, _, _| {
+                for (label, format) in [
+                    (tr("ui.files.txt"), ExportFormat::Txt),
+                    (tr("ui.files.srt"), ExportFormat::Srt),
+                ] {
+                    let owner = owner.clone();
+                    menu = menu.item(PopupMenuItem::new(label).on_click(move |_, _, cx| {
+                        let _ = owner.update(cx, |this, cx| this.export_media(format, cx));
+                    }));
+                }
+                menu
+            });
         body = body
             .child(
                 row()
@@ -306,9 +326,9 @@ impl Settings {
                             button(
                                 "file-timed",
                                 if plain {
-                                    "По фрагментам"
+                                    tr("ui.files.segments")
                                 } else {
-                                    "Текст"
+                                    tr("ui.models.text")
                                 },
                                 p,
                             )
@@ -323,14 +343,14 @@ impl Settings {
                     })
                     .when(!doc.lines.is_empty(), |r| r.child(export)),
             )
-            .children(doc.warning.as_ref().map(|w| text(w.clone(), 12., p.muted)))
+            .children(doc.warning_text().map(|w| text(w, 12., p.muted)))
             .children(
                 self.files_ui
                     .editing
                     .map(|edit| self.speaker_editor(edit, p, cx)),
             );
         if doc.lines.is_empty() {
-            return body.child(text("В записи не удалось распознать речь.", 13., p.muted));
+            return body.child(text(tr("ui.files.no_speech"), 13., p.muted));
         }
         let owner = cx.entity().downgrade();
         let doc = doc.clone();

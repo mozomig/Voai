@@ -259,7 +259,10 @@ fn cancelling_in_flight_keeps_the_partial_file_for_the_next_launch() {
             &agent,
             &url,
         );
-        assert_eq!(result.unwrap_err().to_string(), "Операция отменена");
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            voai_l10n::tr("operation.cancelled")
+        );
     });
     assert_eq!(store.partial_bytes(&model), 2);
     assert!(!store.installed(&model));
@@ -288,7 +291,10 @@ fn cancelling_before_final_verification_keeps_the_complete_partial_for_offline_r
             cancel.store(true, Ordering::Release);
         }
     });
-    assert_eq!(result.unwrap_err().to_string(), "Операция отменена");
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        voai_l10n::tr("operation.cancelled")
+    );
     assert!(!store.installed(&model));
     assert_eq!(store.partial_bytes(&model), model.bytes);
     let reopened = ModelStore::new(tmp.path().into());

@@ -3,6 +3,7 @@ mod diarization;
 mod downloads;
 mod files;
 pub use files::{ExportFormat, FileCommand, FileDocument, FileProgress, FileView};
+use voai_l10n::{tf, tr};
 mod history;
 mod hotkeys;
 pub use history::Outcome as HistoryOutcome;
@@ -69,11 +70,11 @@ impl Backend {
             .truncate(false)
             .open(dir.join("instance.lock"))
             .map_err(|e| e.to_string())?;
-        fs2::FileExt::try_lock_exclusive(&lock).map_err(|_| {
-            "Voai уже запущен. Откройте настройки через значок в строке меню.".to_string()
-        })?;
+        fs2::FileExt::try_lock_exclusive(&lock)
+            .map_err(|_| tr("app.app.already_running").to_string())?;
         let settings =
-            Settings::load(&dir).map_err(|e| format!("Не удалось открыть настройки: {e}"))?;
+            Settings::load(&dir).map_err(|e| tf!("app.settings.open_failed", error = e))?;
+        settings.interface_language.apply();
         let has_key = if settings.mode == Mode::Cloud {
             provider(&settings.provider)
                 .and_then(|p| voai_models::has_api_key(p).map_err(|e| e.to_string()))
@@ -171,6 +172,7 @@ impl Backend {
             noise_suppression: s.noise_suppression,
             compact_widget: s.compact_widget,
             microphones: self.devices.clone(),
+            interface_language: s.interface_language,
             language: s.language.clone(),
             mode: s.mode,
             processing_prompt: s.processing_prompt.clone(),
@@ -231,7 +233,7 @@ impl Backend {
             Command::PlayEntry(id) => {
                 self.files.stop();
                 if matches!(self.session.phase, Phase::Listening | Phase::Finishing) {
-                    return Err("Сначала завершите диктовку.".into());
+                    return Err(tr("app.dictation.busy").into());
                 }
                 self.history.send(history::Request::Play(id));
                 return Ok(());
@@ -248,10 +250,10 @@ impl Backend {
                 let keys = self
                     .shortcuts
                     .as_mut()
-                    .ok_or("Не удалось включить горячие клавиши")?;
+                    .ok_or(tr("app.shortcuts.enable_failed"))?;
                 return if start {
                     if self.session.phase != Phase::Idle {
-                        return Err("Сначала завершите диктовку.".into());
+                        return Err(tr("app.dictation.busy").into());
                     }
                     self.held = false;
                     keys.suspend()
@@ -261,20 +263,21 @@ impl Backend {
             }
             Command::SetShortcut(s) => {
                 if self.session.phase != Phase::Idle {
-                    return Err("Сначала завершите диктовку.".into());
+                    return Err(tr("app.dictation.busy").into());
                 }
                 self.shortcuts
                     .as_mut()
-                    .ok_or("Не удалось включить горячие клавиши")?
+                    .ok_or(tr("app.shortcuts.enable_failed"))?
                     .set(&s)?;
                 next.shortcut = s;
             }
             Command::SetCompactWidget(enabled) => next.compact_widget = enabled,
             Command::SetNoiseSuppression(enabled) => next.noise_suppression = enabled,
             Command::SetMicrophone(device) => next.microphone = device,
+            Command::SetInterfaceLanguage(language) => next.set_interface_language(language),
             Command::SetLanguage(lang) => {
                 if !matches!(lang.as_str(), "ru" | "en" | "auto") {
-                    return Err("Язык недоступен".into());
+                    return Err(tr("app.dictation.language_unavailable").into());
                 }
                 next.language = lang;
             }
@@ -288,7 +291,7 @@ impl Backend {
             }
             Command::SetServerModel(model) => {
                 if !self.server.models.contains(&model) {
-                    return Err("Обновите список моделей сервера.".into());
+                    return Err(tr("app.models.refresh_server").into());
                 }
                 next.server_model = model;
             }
@@ -307,13 +310,13 @@ impl Backend {
                 next.cloud_model = p
                     .models()
                     .first()
-                    .ok_or("Нет облачных моделей")?
+                    .ok_or(tr("app.models.cloud_empty"))?
                     .to_string();
                 next.provider = name;
             }
             Command::SetCloudModel(name) => {
                 if !provider(&next.provider)?.models().contains(&name.as_str()) {
-                    return Err("Неизвестная облачная модель".into());
+                    return Err(tr("app.models.cloud_unknown").into());
                 }
                 next.cloud_model = name;
             }
@@ -322,9 +325,9 @@ impl Backend {
                 voai_models::set_api_key(p, key.trim()).map_err(|e| e.to_string())?;
                 self.has_key = !key.trim().is_empty();
                 self.message = if self.has_key {
-                    "Ключ сохранён в связке ключей."
+                    tr("app.settings.key_saved")
                 } else {
-                    "Ключ удалён."
+                    tr("app.settings.key_removed")
                 }
                 .into();
                 return Ok(());
@@ -344,12 +347,12 @@ impl Backend {
                 next.save(&self.dir).map_err(|e| e.to_string())?;
                 self.settings = next;
                 self.connections.forget(&id);
-                self.message = "Модель отключена. Файл остался на диске.".into();
+                self.message = tr("app.models.disconnected").into();
                 return Ok(());
             }
             Command::Download(id) => {
                 self.downloads
-                    .start(voai_models::find(&id).ok_or("Модель недоступна")?);
+                    .start(voai_models::find(&id).ok_or(tr("app.models.unavailable"))?);
                 return Ok(());
             }
             Command::CancelDownload(id) => {
@@ -406,6 +409,9 @@ impl Backend {
         }
         let refresh_key = next.mode == Mode::Cloud
             && (next.mode != self.settings.mode || next.provider != self.settings.provider);
+        if self.settings.interface_language != next.interface_language {
+            next.interface_language.apply();
+        }
         self.settings = next;
         if refresh_server {
             self.server
@@ -447,7 +453,7 @@ impl Backend {
         let target = if own_window && self.test_focus {
             Destination::Test
         } else if own_window {
-            return Err("Поставьте курсор в поле для диктовки или в своём редакторе.".into());
+            return Err(tr("app.dictation.focus_field").into());
         } else {
             Destination::Field(macos::Destination::capture(self.settings.compact_widget)?)
         };
@@ -456,7 +462,7 @@ impl Backend {
             return Ok(());
         }
         if !macos::microphone_allowed() {
-            return Err("Разрешите доступ к микрофону в разделе «Диктовка».".into());
+            return Err(tr("app.dictation.mic_permission").into());
         }
         let path = self
             .settings
@@ -482,7 +488,7 @@ impl Backend {
             && self.session.phase == Phase::Listening
         {
             self.session
-                .fail("Запись прервалась. Начните диктовку заново.".into());
+                .fail(tr("app.dictation.recording_interrupted").into());
             self.held = false;
         }
         self.last_tick = now;
@@ -543,9 +549,9 @@ impl Backend {
                         Ok(()) => {
                             self.connections.mark_available(&model);
                             self.settings = next;
-                            self.message = "Файл подключён. Теперь модель можно выбрать.".into();
+                            self.message = tr("app.models.connected").into();
                         }
-                        Err(e) => self.message = format!("Не удалось сохранить подключение: {e}"),
+                        Err(e) => self.message = tf!("app.models.save_connection", error = e),
                     }
                 }
                 Err(error) => self.message = error,
@@ -564,7 +570,7 @@ impl Backend {
                 }
                 Err(TryRecvError::Disconnected) => {
                     self.device_list = None;
-                    self.message = "Не удалось обновить список микрофонов.".into();
+                    self.message = tr("app.audio.devices_refresh").into();
                 }
                 Err(TryRecvError::Empty) => {}
             }

@@ -7,12 +7,13 @@ use std::{
     path::Path,
 };
 use tempfile::NamedTempFile;
+use voai_l10n::{tf, tr};
 
 pub(super) struct Store(Connection);
 
 impl Store {
     pub fn open(dir: &Path) -> Result<Self, String> {
-        let error = "Не удалось открыть библиотеку расшифровок.";
+        let error = tr("app.files.library_open");
         fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -40,7 +41,7 @@ impl Store {
     }
 
     pub fn list(&self) -> Result<Vec<FileSummary>, String> {
-        let error = "Не удалось загрузить список расшифровок.";
+        let error = tr("app.files.library_list");
         self.0
             .prepare("SELECT id,title FROM documents ORDER BY id DESC")
             .map_err(|_| error)?
@@ -56,7 +57,7 @@ impl Store {
     }
 
     pub fn save(&self, doc: &mut FileDocument) -> Result<(), String> {
-        let error = "Не удалось сохранить расшифровку.";
+        let error = tr("app.files.save_failed");
         let data = serde_json::to_vec(doc).map_err(|_| error)?;
         if doc.id.is_empty() {
             self.0
@@ -86,18 +87,10 @@ impl Store {
             .query_row("SELECT content FROM documents WHERE id=?", [&id], |r| {
                 r.get(0)
             })
-            .map_err(|_| "Расшифровка недоступна.")?;
+            .map_err(|_| tr("app.files.unavailable"))?;
         let mut doc: FileDocument =
-            serde_json::from_slice(&bytes).map_err(|_| "Не удалось прочитать расшифровку.")?;
-        // Version 1.3.0 stored the ordinary text-only mode as a warning.
-        if let Some(rest) = doc
-            .warning
-            .as_deref()
-            .and_then(|s| s.strip_prefix("Расшифровано без определения спикеров."))
-        {
-            let rest = rest.trim();
-            doc.warning = (!rest.is_empty()).then(|| rest.to_owned());
-        }
+            serde_json::from_slice(&bytes).map_err(|_| tr("app.files.read_failed"))?;
+        doc.migrate_warnings();
         doc.id = id;
         Ok(doc)
     }
@@ -109,7 +102,7 @@ pub(super) fn export(
     doc: &FileDocument,
     private: &Path,
 ) -> Result<(), String> {
-    let error = "Не удалось сохранить файл экспорта.";
+    let error = tr("app.files.export_failed");
     let extension = match format {
         ExportFormat::Txt => "txt",
         ExportFormat::Srt => "srt",
@@ -119,20 +112,20 @@ pub(super) fn export(
         .and_then(|x| x.to_str())
         .is_some_and(|x| x.eq_ignore_ascii_case(extension))
     {
-        return Err(format!("Выберите имя с расширением .{extension}."));
+        return Err(tf!("app.files.export_extension", extension = extension));
     }
     let parent = path
         .parent()
         .and_then(|p| p.canonicalize().ok())
         .ok_or(error)?;
     if parent.starts_with(private.canonicalize().map_err(|_| error)?) {
-        return Err("Выберите папку вне хранилища Voai.".into());
+        return Err(tr("app.files.export_location").into());
     }
     if let (Ok(a), Ok(b)) = (doc.source.metadata(), path.metadata())
         && a.dev() == b.dev()
         && a.ino() == b.ino()
     {
-        return Err("Выберите файл, отличный от исходной записи.".into());
+        return Err(tr("app.files.export_overwrite").into());
     }
     let mut temp = NamedTempFile::new_in(parent).map_err(|_| error)?;
     temp.write_all(doc.export_text(format).as_bytes())
@@ -150,15 +143,15 @@ impl Store {
                 r.get(0)
             })
             .optional()
-            .map_err(|_| "Не удалось прочитать настройки расшифровки.")?;
+            .map_err(|_| tr("app.files.read_options"))?;
         data.map(|v| serde_json::from_slice(&v))
             .transpose()
             .map(Option::unwrap_or_default)
-            .map_err(|_| "Не удалось прочитать настройки расшифровки.".into())
+            .map_err(|_| tr("app.files.read_options").into())
     }
 
     pub fn save_choice(&self, choice: &super::FileOptions) -> Result<(), String> {
-        let err = "Не удалось сохранить настройки расшифровки.";
+        let err = tr("app.files.save_options");
         let data = serde_json::to_vec(choice).map_err(|_| err)?;
         self.0
             .execute(

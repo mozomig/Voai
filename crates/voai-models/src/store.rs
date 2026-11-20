@@ -7,6 +7,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, SystemTime};
+use voai_l10n::{tf, tr};
 
 #[derive(Clone, Debug)]
 pub struct ModelStore {
@@ -24,16 +25,16 @@ impl ModelStore {
 
     pub fn installed_path(&self, model: &ModelFile) -> Result<PathBuf> {
         let path = self.dir(model).join(model.filename);
-        let metadata = path.symlink_metadata().context("Модель не установлена")?;
+        let metadata = path.symlink_metadata().context(tr("model.not.installed"))?;
         ensure!(
             metadata.is_file() && metadata.len() == model.bytes,
-            "Файл модели повреждён"
+            tr("model.corrupt")
         );
         let stamp =
-            fs::read_to_string(self.dir(model).join("verified")).context("Модель не проверена")?;
+            fs::read_to_string(self.dir(model).join("verified")).context(tr("model.unverified"))?;
         ensure!(
             stamp == verified_stamp(&metadata, model)? || stamp == legacy_stamp(&metadata, model)?,
-            "Файл модели изменился после проверки"
+            tr("model.changed.verified")
         );
         Ok(path)
     }
@@ -78,7 +79,7 @@ impl ModelStore {
             return Ok(path);
         }
         let dir = self.dir(model);
-        fs::create_dir_all(&dir).context("Не удалось создать каталог модели")?;
+        fs::create_dir_all(&dir).context(tr("model.directory"))?;
         // The permanent lock file is deliberately not unlinked. Recreating the inode
         // while another process waits for the lock could grant two concurrent writers.
         let lock = OpenOptions::new()
@@ -86,8 +87,7 @@ impl ModelStore {
             .truncate(false)
             .write(true)
             .open(dir.join("install.lock"))?;
-        lock.try_lock()
-            .context("Модель уже загружается другим процессом")?;
+        lock.try_lock().context(tr("model.locked"))?;
         if let Ok(path) = self.installed_path(model) {
             progress(model.bytes);
             return Ok(path);
@@ -99,8 +99,7 @@ impl ModelStore {
             .symlink_metadata()
             .is_ok_and(|m| m.is_file() && m.len() == model.bytes)
         {
-            let mut existing =
-                File::open(&installed).context("Не удалось прочитать установленную модель")?;
+            let mut existing = File::open(&installed).context(tr("model.installed.unreadable"))?;
             let stamp = verified_stamp(&existing.metadata()?, model)?;
             if verify(&mut existing, model, cancel)?
                 && stamp == verified_stamp(&installed.symlink_metadata()?, model)?
@@ -139,10 +138,7 @@ impl ModelStore {
                 }
             };
             let mut response = response.map_err(|err| {
-                anyhow::anyhow!(
-                    "Не удалось скачать модель ({}). Повторите загрузку",
-                    http_failure(&err)
-                )
+                anyhow::anyhow!(tf!("download.failed", reason = http_failure(&err)))
             })?;
             let mut skip_prefix = 0;
             match response.status().as_u16() {
@@ -154,7 +150,7 @@ impl ModelStore {
                             .get("Content-Range")
                             .and_then(|v| v.to_str().ok())
                             == Some(&expected),
-                        "Сервер вернул неверный диапазон модели"
+                        tr("download.range")
                     );
                 }
                 200 => {
@@ -162,7 +158,7 @@ impl ModelStore {
                     // skipped. Final SHA-256 still verifies the entire file.
                     skip_prefix = offset;
                 }
-                code => anyhow::bail!("Сервис загрузки вернул HTTP {code}"),
+                code => anyhow::bail!(tf!("download.http", code = code)),
             }
             transfer(
                 response.body_mut().as_reader(),
@@ -179,7 +175,7 @@ impl ModelStore {
         if !verify(&mut output, model, cancel)? {
             drop(output);
             fs::remove_file(&part)?;
-            anyhow::bail!("Контрольная сумма модели не совпала. Повторите загрузку");
+            anyhow::bail!(tr("download.checksum"));
         }
         check_cancelled(cancel)?;
         fs::rename(part, &installed)?;
@@ -222,8 +218,8 @@ fn legacy_stamp(metadata: &fs::Metadata, model: &ModelFile) -> Result<String> {
 pub(crate) fn http_failure(error: &ureq::Error) -> String {
     match error {
         ureq::Error::StatusCode(code) => format!("HTTP {code}"),
-        ureq::Error::Timeout(_) => "истекло время ожидания".into(),
-        _ => "ошибка соединения".into(),
+        ureq::Error::Timeout(_) => tr("download.timeout").into(),
+        _ => tr("download.connection").into(),
     }
 }
 
@@ -239,9 +235,7 @@ fn transfer(
     let mut buf = vec![0; 128 * 1024];
     loop {
         check_cancelled(cancel)?;
-        let n = input
-            .read(&mut buf)
-            .context("Соединение прервано. Повторите загрузку, чтобы продолжить")?;
+        let n = input.read(&mut buf).context(tr("download.interrupted"))?;
         if n == 0 {
             break;
         }
@@ -249,17 +243,13 @@ fn transfer(
         skip_prefix -= skip;
         let fresh = &buf[skip as usize..n];
         count += fresh.len() as u64;
-        ensure!(
-            count <= bytes,
-            "Сервер прислал больше данных, чем ожидалось"
-        );
-        out.write_all(fresh)
-            .context("Не удалось сохранить веса на диске")?;
+        ensure!(count <= bytes, tr("download.excess"));
+        out.write_all(fresh).context(tr("download.disk"))?;
         progress(count);
     }
     ensure!(
         count == bytes && skip_prefix == 0,
-        "Загрузка прервана. Скачано {count} из {bytes} байт"
+        tf!("download.incomplete", count = count, bytes = bytes)
     );
     Ok(())
 }

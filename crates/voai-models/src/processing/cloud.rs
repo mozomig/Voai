@@ -3,6 +3,7 @@ use crate::{check_cancelled, store::http_failure};
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use std::{sync::atomic::AtomicBool, time::Duration};
+use voai_l10n::tr;
 
 pub(super) fn extract_response(provider: Provider, data: &Value) -> Result<String> {
     match provider {
@@ -11,7 +12,7 @@ pub(super) fn extract_response(provider: Provider, data: &Value) -> Result<Strin
                 data.pointer("/choices/0/finish_reason")
                     .and_then(Value::as_str)
                     == Some("stop"),
-                "Провайдер не завершил редактирование"
+                tr("cloud.incomplete")
             );
             edited(
                 data.pointer("/choices/0/message/content")
@@ -22,11 +23,9 @@ pub(super) fn extract_response(provider: Provider, data: &Value) -> Result<Strin
         Provider::Anthropic => {
             ensure!(
                 data["stop_reason"].as_str() == Some("end_turn"),
-                "Провайдер не завершил редактирование"
+                tr("cloud.incomplete")
             );
-            let blocks = data["content"]
-                .as_array()
-                .context("Не удалось прочитать результат провайдера")?;
+            let blocks = data["content"].as_array().context(tr("cloud.unreadable"))?;
             let text = blocks
                 .iter()
                 .filter(|b| b["type"] == "text")
@@ -50,10 +49,10 @@ pub fn process_cloud(
     check_cancelled(cancel)?;
     ensure!(
         provider.models().contains(&model),
-        "Неизвестная модель провайдера"
+        tr("cloud.unknown.model")
     );
-    let secret = credentials::read(provider)?.context("Укажите API-ключ в настройках")?;
-    let key = std::str::from_utf8(&secret).context("Некорректный ключ в связке ключей")?;
+    let secret = credentials::read(provider)?.context(tr("cloud.no.key"))?;
+    let key = std::str::from_utf8(&secret).context(tr("cloud.key.encoding"))?;
     let agent = ureq::Agent::config_builder()
         .https_only(true)
         .max_redirects(0)
@@ -121,7 +120,7 @@ fn send_edit(
         .with_config()
         .limit(2 * 1024 * 1024)
         .read_json()
-        .map_err(|_| anyhow::anyhow!("Некорректный ответ провайдера"))?;
+        .map_err(|_| anyhow::anyhow!(tr("cloud.invalid.response")))?;
     check_cancelled(cancel)?;
     extract_response(provider, &value)
 }

@@ -1,118 +1,127 @@
-# Архитектура Voai для macOS
+# Voai for macOS
 
-## Реализация версии 1.4
+## Process boundaries
 
-Основной процесс обслуживает окна GPUI, меню macOS, глобальное сочетание клавиш и доступ к микрофону. Распознавание и локальная постобработка выполняются в дочерних процессах из того же подписанного пакета. Аудио и текст текущей фразы хранятся в памяти. Настройки и проверенные веса переживают перезапуск приложения. Схема настроек сохраняет совместимость с 0.1: отсутствующие поля получают значения по умолчанию.
+The main process owns the GPUI windows, macOS menus, global shortcut and microphone permissions. Speech recognition and local text editing run in child processes from the same signed bundle. The active utterance stays in memory. Settings, verified model files and completed history entries persist across launches. Missing fields in older settings files receive defaults.
 
-| Где искать код | Ответственность |
-|---|---|
-| `src/ui/` | Окно настроек, пробное поле, плавающая панель и значок меню. Интерфейс передаёт команды и отображает снимок состояния. |
-| `src/app/` | Глобальные сочетания, настройки, загрузки и переходы одной диктовки. У каждой сессии свой приёмник результатов и флаг отмены. |
-| `src/app/history.rs`, `src/app/history/store.rs` | Последние 20 завершённых диктовок. Отдельный поток управляет SQLite и воспроизведением через AVAudioPlayer. Снимок для UI содержит тексты и метаданные. Аудио загружается при воспроизведении. |
-| `src/macos.rs`, `src/insertion.rs` | Разрешения macOS, захват окна, поля и выделения, сверка цели перед однократной попыткой ввода. |
-| `crates/voai-speech/` | Перечисление входов через Core Audio HAL, запись через CPAL, ограниченный буфер и преобразование в моно PCM 16 кГц. Включаемый для одной сессии FastEnhancer-B подаёт очищенные кадры в черновое и финальное распознавание. После отпускания клавиш сбрасывается хвост фильтра. |
-| `voai --speech-worker` | whisper.cpp с Metal. Черновик строится по последним 12 секундам, итог — по всей записи до пяти минут. Прогретый процесс переиспользуется до 90 секунд. |
-| `crates/voai-models/` | Каталог и докачка с SHA-256, проверка собственных файлов, локальный и облачные адаптеры, доступ к Keychain. |
-| `crates/voai-text-helper/` | llama.cpp с Metal для локального редактирования. Текст и ответ передаются через каналы дочернего процесса. |
-| `scripts/package-macos` | Сборка arm64, проверка динамических зависимостей, подпись приложения и вложенного файла. Для публичной сборки поддерживается нотарификация. |
+| Location | Responsibility |
+| --- | --- |
+| `src/ui/` | Settings, test field, floating panel and menu bar item. The UI dispatches commands and renders snapshots. |
+| `src/app/` | Hotkeys, settings, downloads and dictation sessions. Each session owns its response channel and cancellation flag. |
+| `src/app/history.rs`, `src/app/history/store.rs` | A dedicated thread owns the SQLite history and AVAudioPlayer playback. UI snapshots carry text and metadata. Audio is loaded for playback. |
+| `src/macos.rs`, `src/insertion.rs` | Permissions, capture of the target application, window, field and selection, and revalidation before a single insertion attempt. |
+| `crates/voai-speech/` | Core Audio HAL input discovery, CPAL capture, bounded buffering and conversion to mono 16 kHz PCM. Optional FastEnhancer-B feeds cleaned frames into partial and final recognition. Releasing the shortcut flushes the filter tail. |
+| `voai --speech-worker` | whisper.cpp with Metal. Drafts use the most recent 12 seconds. Final recognition uses the full recording up to five minutes. The process can stay warm for up to 90 seconds. |
+| `crates/voai-l10n/` | English and Russian catalogs compiled with rust-i18n. The System preference follows the first supported language in the macOS list. Each worker receives the resolved interface language at launch, separately from the language passed to Whisper. |
+| `crates/voai-models/` | Model catalog, resumable downloads with SHA-256 validation, checks for local files, text editing adapters and Keychain access. |
+| `crates/voai-text-helper/` | llama.cpp with Metal. The local editor receives text and returns results over pipes. |
+| `scripts/package-macos` | Builds for arm64, checks dynamic dependencies, signs the app and its helpers, and optionally notarizes the package. |
 
-При нажатии сочетания Voai запоминает цель и настройки. При отпускании завершает расшифровку, выполняет выбранную обработку и сверяет фокус. Если поле сменилось, пользователь выбирает куда ввести результат. При сбое обработки остаётся исходная расшифровка. При неопределённом результате записи автоматический повтор отключён.
+Pressing the dictation shortcut captures the target and settings. Releasing it finishes recognition, applies the selected editing mode and rechecks focus. A changed target requires the user to select where to insert the phrase. An editor failure preserves the original transcript. An ambiguous write always requires user review.
 
-В AppKit используется `AXSelectedText`. Для веб-полей с доступным диапазоном выделения используется адресная отправка Unicode через Core Graphics с проверкой введённого диапазона. После отправки приложение ожидает обновления дерева Accessibility до четырёх секунд и завершает ожидание сразу после подтверждения. Панель остаётся отзывчивой. В Chrome проверка учитывает отложенное обновление диапазона текста. Причина отдельного пути — WKWebView может подтвердить установку `AXSelectedText`, сохранив прежнее значение в DOM. Регрессии покрывает `tests/macos/input.swift`, включая сохранность буфера обмена. Многострочный ввод через клавиатурные события, защищённые поля и редакторы без доступной позиции курсора требуют ручного выбора совместимой цели.
+AppKit fields use `AXSelectedText`. For supported web fields with an accessible selection range, Voai sends targeted Unicode events through Core Graphics and checks the inserted range. It waits up to four seconds for the Accessibility tree to catch up, stopping as soon as the write is confirmed. The panel stays responsive. Chrome may report the updated range late. WKWebView can acknowledge an `AXSelectedText` write while its DOM retains the old value. The AppKit and WebKit regression test covers both insertion and pasteboard preservation. Secure fields, editors with no accessible caret and multiline text requiring keyboard events may need a different target. [Insertion test](tests/macos/input.swift)
 
-### Файловая расшифровка
+### Interface language
 
-Экран «Расшифровка» отправляет команды в `app::files::Files`. При старте импорта координатор фиксирует путь к источнику, выбор весов каждого этапа, язык и сохранённую инструкцию редактирования. Независимые настройки файлового режима и документы лежат в `Transcripts/library.sqlite3`. Координатор принимает результаты через канал конкретной задачи. Отмена замыкает канал и останавливает дочерний процесс. Готовый документ публикуется одной записью в SQLite.
+The `voai-l10n` crate holds English and Russian message catalogs shared by the desktop app and its workers. `InterfaceLanguage` stores either an explicit language or a preference to follow macOS. In system mode, Voai uses the first supported language in the preferred language list, falling back to English. Each child process receives the language when it starts. The language used for speech recognition is a separate setting.
 
-1. Подписанный `voai-media-helper` декодирует локальную звуковую дорожку AVFoundation в приватный временный PCM 16 кГц. Этот же helper воспроизводит интервал исходного медиа по таймкоду.
-2. `voai --file-worker` читает PCM перекрывающимися окнами до 30 секунд и возвращает слова с абсолютными временами. Отдельный протокол оставляет короткие сессии диктовки независимыми от длительности импортированных файлов.
-3. Опциональный `voai-diarize` определяет интервалы спикеров через sherpa-onnx окнами по 75 секунд с контекстом до 5 секунд с каждой стороны. Для сопоставления спикеров между окнами он хранит векторы голосов и интервалы на последнем стыке. `files::document` сопоставляет слова с интервалами и помечает неоднозначные места. Для локальных весов выполняется проверка совместимости вне процесса UI.
-4. Опциональный `voai-text-helper --edit-lines-v1` загружает GGUF один раз на файл и редактирует по одной реплике. В документе сохраняются исходные варианты изменённых реплик. Серверный и облачный режимы диктовки в файловом пути не вызываются.
+### Audio and video files
 
-Идентификаторы участников принадлежат документу. Переименование изменяет его словарь имён, переназначение — одну реплику. Для воспроизведения проверяется, что исходный файл не был заменён. TXT и SRT экспортируются с исходными таймкодами через временный файл и переименование.
+The transcription screen dispatches commands to `app::files::Files`. Starting an import snapshots the source path, model choices for each stage, speech language and editing instructions. The file pipeline's own settings and documents live in `Transcripts/library.sqlite3`. Each import has a response channel. Cancelling closes it and stops the child process. A completed document is published in a single SQLite write.
+
+1. The signed `voai-media-helper` uses AVFoundation to decode a local audio track into a private temporary 16 kHz PCM file. It also plays a time interval in the original recording.
+2. `voai --file-worker` reads overlapping windows of up to 30 seconds and returns words with absolute timestamps. A separate protocol lets file imports outlast short dictation sessions.
+3. Optional `voai-diarize` uses sherpa-onnx to extract speaker intervals in 75-second windows with up to five seconds of context on each side. It keeps voice embeddings and the intervals at the most recent join to match speakers across windows. `files::document` assigns words to intervals and marks uncertain turns. User-provided weights are validated outside the UI process.
+4. Optional `voai-text-helper --edit-lines-v1` loads a GGUF model once per file and edits one turn at a time. Changed turns keep their originals. File editing uses local weights only.
+
+Each document owns its speaker IDs. Renaming a speaker updates the document's name map. Reassigning a turn affects that turn alone. Before playback, Voai checks that the source file still matches its recorded identity. TXT and SRT exports preserve original timestamps and use a temporary file followed by rename.
 
 ### Telegram
 
-Опциональный адаптер в `src/app/telegram` принимает обновления через HTTPS long polling. Все запросы Bot API и загрузки вложений проходят через эфемерную URLSession macOS с системными настройками VPN и прокси. При явном выборе SOCKS5 сессия использует только указанный порт на 127.0.0.1, с отключённым переходом на прямое соединение. Порт хранится в состоянии бота. Делегат отклоняет перенаправления и ограничивает полученные байты до записи. Остановка бота отменяет активные сетевые задачи. После проверки токена через `getMe` одноразовая ссылка привязывает один личный чат к идентификатору бота. Токен хранится в отдельной записи Keychain. В `telegram.json` находятся идентификатор записи, идентификаторы бота и владельца и смещение для следующего запроса.
+The optional adapter in `src/app/telegram` receives Bot API updates through HTTPS long polling. Bot API requests and media downloads use an ephemeral macOS URLSession with system VPN and proxy settings. If the user specifies SOCKS5, the session uses only the configured port on 127.0.0.1 and disables direct fallback. The delegate rejects redirects and limits response bytes before writing. Stopping the bot cancels active network tasks.
 
-Входящие файлы обрабатываются по одному. Адаптер ограничивает размер при потоковой загрузке, создаёт временную копию и запрашивает текущие настройки файлового распознавания через канал Backend. Речевой процесс и опциональный локальный редактор общие с импортом. Бот возвращает абзацы в исходный чат и очищает временную папку. Фоновый поток владеет файлом состояния и обращается к Keychain. При временной сетевой ошибке он повторяет загрузку до четырёх раз с учётом задержки Telegram. Перед доставкой в одной атомарной записи сохраняются смещение и оставшиеся части ответа. Перед каждым сетевым вызовом фиксируется попытка отправки. Подтверждённая часть удаляется. После перезапуска бот проверяет свою идентичность и продолжает доставку в привязанный чат. Если исход отправки неизвестен, пользователь проверяет чат и выбирает, подтвердить часть или отправить её снова. Отключение отменяет обработку, дожидается предыдущего потока в фоне и удаляет подключение вместе с недоставленным текстом.
+Voai checks the token with `getMe`. A one-time link pairs one private chat with that bot ID. The token has its own Keychain entry. `telegram.json` stores the Keychain account identifier, bot and owner IDs, proxy port if configured, and next update offset.
 
-### Собственные модели и серверы
+Incoming files are processed one at a time. The adapter enforces a streaming size limit, creates a temporary local copy and asks the backend for the current file transcription settings. It reuses the speech worker and optional local editor from file imports. It replies with paragraphs in the originating chat and removes the temporary directory. The background worker owns the state file and talks to Keychain. It retries a transient download failure up to four times, respecting Telegram's requested delay.
 
-Каталожные веса Voai скачивает в собственный каталог моделей. Собственные файлы подключаются по каноническому пути. Приложение проверяет контейнер и загрузку соответствующим движком в отдельном процессе, сохраняет тип, идентичность файла и время изменения. При переподключении проверяется новая версия. Удаление подключения сохраняет исходный файл.
+Before sending a reply, a single atomic write saves the update offset and remaining reply parts. Before each network call the worker records its delivery attempt. Confirmed parts are removed. After a restart Voai verifies the bot's identity and continues delivery in the paired chat. When Telegram may already have accepted a part, the user checks the chat and decides whether to confirm or resend it. Disconnecting cancels processing, waits for the old worker in the background and removes the connection and pending text.
 
-Постобработка использует инструкцию из настроек, зафиксированных при начале диктовки. Локальный helper получает инструкцию и расшифровку отдельными сообщениями протокола. Адаптеры HTTP передают отдельные системное и пользовательское сообщения. При ошибке остаётся исходная расшифровка.
+### Models and local servers
 
-Локальные серверы выбираются через OpenAI-совместимый API на loopback. Список приходит из `GET /v1/models`, текст обрабатывается через `POST /v1/chat/completions`. Запросы выполняются в фоне. Клиент отключает прокси и перенаправления, а токен в Keychain привязывает к адресу конкретного сервера. Voai управляет только своим клиентом. Загруженными моделями, ресурсами и возможной дальнейшей передачей данных управляет сам сервер. [API Ollama](https://docs.ollama.com/api/openai-compatibility) · [API LM Studio](https://lmstudio.ai/docs/developer/openai-compat)
+Catalog weights download into Voai's own model directory. Models supplied by the user are referenced by canonical path. A separate process checks the container and tries loading the model with the corresponding engine. Voai records the type, file identity and modification time. Reconnecting validates the replacement. Removing a connection leaves the weights on disk.
 
-### Прямая поставка для macOS
+An utterance uses the editing instructions captured when dictation starts. The local helper receives the instructions and transcript in separate protocol messages. HTTP adapters send separate system and user messages. A failed edit leaves the original available.
 
-MacWhisper объясняет доступность своей системной диктовки ограничениями версии Mac App Store. Его справка не раскрывает конкретный метод вставки. В Voai межпроцессный ввод опирается на публичные Accessibility API с разрешением пользователя. Apple относит такое использование Accessibility к возможностям, несовместимым с обязательной для Mac App Store App Sandbox. Поэтому Voai собирается как самостоятельное приложение macOS. [Справка MacWhisper](https://docs.macwhisper.com/article/14-how-to-use-the-dictation-feature) · [Документация Apple](https://developer.apple.com/documentation/security/protecting-user-data-with-app-sandbox)
+Local servers use an OpenAI-compatible API on loopback. The client discovers models with `GET /v1/models` and edits text through `POST /v1/chat/completions`. Requests run in the background with proxies and redirects disabled. Each Keychain token is scoped to a server address. The server controls its loaded models, resources and any subsequent forwarding of data. [Ollama API](https://docs.ollama.com/api/openai-compatibility) · [LM Studio API](https://lmstudio.ai/docs/developer/openai-compat)
 
-## Исходное проектное предложение
+### macOS distribution
 
-Ниже сохранены решения и критерии, сформулированные до реализации. Пункты о будущих измерениях и расширении совместимости остаются планами. [Сценарии интерфейса](./opendesign-prompt.txt)
+Voai ships as a standalone macOS app. Writing into another app's focused field requires user-authorized Accessibility APIs. Apple lists this use of Accessibility as incompatible with the App Sandbox required for Mac App Store distribution. MacWhisper also documents a store limitation for system-wide dictation. Its help page does not specify which API it uses to insert text. [Apple's sandbox documentation](https://developer.apple.com/documentation/security/protecting-user-data-with-app-sandbox) · [MacWhisper dictation](https://docs.macwhisper.com/article/14-how-to-use-the-dictation-feature)
 
-## Границы программы
+## Original design and acceptance criteria
 
-Предлагаю поставлять один Voai.app. Основной процесс владеет интерфейсом, микрофоном, доступом к другим приложениям и жизненным циклом диктовки. Нативный код моделей выполняется во вспомогательных процессах внутри того же пакета. Это единственная граница, где на старте оправдан межпроцессный обмен: авария движка во время редактирования должна оставить пользователю исходную расшифровку и работающую панель.
+These were the design goals before implementation. Hardware targets, future measurements and proposed recovery behavior below describe the original plan. [Original interface brief](./opendesign-prompt.txt)
 
-| Модуль | Чем владеет | Что видят его клиенты |
-|---|---|---|
-| session | Текущая сессия, её настройки и допустимые переходы | Команды пользователя, события исполнения, снимок состояния для интерфейса |
-| macos | Глобальные клавиши, микрофон, доступность, цель ввода, окно панели и меню | Начать и завершить захват, получить ссылку на цель, попытаться ввести текст |
-| speech | Подготовка аудио и управление локальным речевым движком | Обновления черновика, окончательная расшифровка или причина сбоя |
-| processing | Выбор локальной либо облачной обработки, таймаут и отмена | Итоговый текст или ошибка при сохранённом оригинале |
-| models | Каталог, загрузки, проверка файлов и учёт используемых версий | Скачать, выбрать, освободить, наблюдать прогресс |
-| ui | Панель, меню и настройки в GPUI | Отправляет команды, отображает состояние и доступные действия |
+### Ownership
 
-Структура Cargo следует границам сборки. Небольшой crate с логикой сессии можно собирать и тестировать без GPUI, AppKit и моделей. Основное приложение связывает адаптеры. Речевой и текстовый helper собираются каждый со своим нативным движком, чтобы их версии и параметры сборки можно было обновлять независимо. Внутри приложения достаточно обычных Rust-модулей. Интерфейс подмены нужен в местах реальных внешних эффектов, например для ввода в чужое поле.
+Ship one app. The main process owns the UI, microphone, access to other applications and the dictation lifecycle. Isolate native model code in helpers so an editing engine crash leaves the transcript and recovery panel available.
 
-## Одна диктовка
+| Module | Owns | Interface |
+| --- | --- | --- |
+| Session | Active utterance, frozen settings and valid state transitions | User commands and worker events in, UI snapshot out |
+| macOS | Hotkeys, input permissions, target, panel window and menu | Start and stop capture, capture a target reference, attempt insertion |
+| Speech | Audio preparation and local recognition | Drafts, final transcript and failures |
+| Processing | Local or cloud editing, timeouts and cancellation | Edited text or a failure with the original preserved |
+| Models | Catalog, downloads, file verification and installed versions | Download, select, release and follow progress |
+| UI | GPUI panel, menu and settings | Render current state and dispatch available actions |
 
-Сессией владеет один последовательный обработчик событий. Поток аудио и вычисления идут отдельно. При старте обработчик фиксирует SessionId, ссылку на целевое поле, доступный диапазон выделения, версию речевой модели и настройки обработки. Изменение модели в окне настроек применяется к следующей сессии.
+The proposed Cargo boundaries followed build requirements. Session logic could be tested without GPUI, AppKit or model weights. The application would compose the adapters. Each model helper would build its own native engine, allowing independent version and build settings. Ordinary Rust modules would handle internal logic. External operations such as writing to another app's field would provide a test seam.
 
-| Событие | Действие и наблюдаемый результат |
-|---|---|
-| Первое нажатие | Начать захват, показать панель поверх исходного приложения. Автоповтор клавиши игнорировать. При отсутствии разрешения или модели показать конкретное действие настройки. |
-| Поступило аудио | Обновить уровень сигнала. По мере готовности локального движка заменять черновик в панели. |
-| Клавиши отпущены | Закрыть поток записи, принять оставшиеся сэмплы, завершить распознавание. Тишина или пустой результат закрывают панель без ввода. |
-| Расшифровка готова | Сохранить оригинал в памяти. При выключенной обработке перейти к вводу, иначе передать текст выбранному обработчику. |
-| Итог готов | Повторно проверить цель, затем однократно инициировать ввод. При смене поля удерживать результат до явной команды на ввод в выбранное пользователем место. |
-| Esc, сон Mac, отключение микрофона | До начала ввода Esc отменяет работу и освобождает ресурсы. Сон завершает захват, даже если потеряно событие отпускания. При обрыве устройства во время записи предложить завершить по уже принятому аудио или отменить. |
+### One utterance
 
-Каждый ответ фоновой операции содержит идентификатор сессии. Повторная попытка внутри сессии получает также новый идентификатор операции. Обработчик принимает ответ только для ожидаемой операции и стадии. Это покрывает поздний ответ облака после отмены, последний черновик после финального текста и два события отпускания. Пока предыдущая фраза завершается или ждёт восстановления, новое нажатие показывает её состояние. Диктовки не накапливаются в скрытой очереди.
+A single ordered event handler owns a session. Audio capture and inference run separately. Starting records the session ID, target field, available selection range, speech model version and editing settings. Changes in Settings take effect on the next utterance.
 
-## Аудио и живая расшифровка
+| Event | Expected behavior |
+| --- | --- |
+| First key press | Start capture and show the panel over the originating app. Ignore key repeat. If a model or permission is missing, show the relevant setup action. |
+| Incoming audio | Update the level meter and replace the draft as recognition results arrive. |
+| Release | Close capture, drain samples and finish recognition. Silence or an empty result closes the panel without inserting text. |
+| Transcript ready | Keep the original in memory. Deliver immediately with editing off, otherwise hand it to the selected editor. |
+| Final text ready | Recheck the target and attempt insertion once. If focus changed, retain the text until the user selects a target. |
+| Escape, sleep or lost microphone | Escape before insertion cancels and releases resources. Sleep ends capture even if the key-up was lost. A device failure lets the user finish with the captured audio or cancel. |
 
-Кандидат для первой поставки — whisper.cpp с Metal и многоязычными весами. Core ML можно оценить отдельно на тех же записях. Движок поддерживает оптимизации для Apple Silicon, а upstream показывает периодическое распознавание скользящего окна как исходную реализацию живого черновика. [Движок](https://github.com/ggml-org/whisper.cpp) · [Пример потоковой обработки](https://github.com/ggml-org/whisper.cpp/blob/master/examples/stream/README.md)
+Each background response belongs to a session. A retry also receives a new operation identity. The handler accepts responses only for the expected operation and phase, including late cloud replies, drafts arriving after the final transcript and duplicate releases. Pressing the shortcut during completion or recovery shows the current phrase. There is no hidden queue of dictations.
 
-Callback микрофона копирует сэмплы в заранее выделенный ограниченный кольцевой буфер. Другой поток преобразует формат в моно PCM 16 кГц, сохраняет аудио текущей фразы в памяти и передаёт его речевому процессу. Никаких ожиданий диска, движка или UI внутри callback. При перегрузке сначала пропускаем устаревшее обновление черновика. Потерю самих сэмплов показываем как прерванную запись. До выпуска задаём максимальную длительность фразы по замерам памяти и предупреждаем о приближении к пределу.
+### Capture and live recognition
 
-Черновик имеет номер ревизии и может менять последние слова. Для прототипа — повторное декодирование окна с перекрытием. После отпускания финальная расшифровка учитывает всю принятую запись. Время повторного декодирования длинных фраз измеряем отдельно: если оно велико, сохраняем завершённые сегменты с временными границами и досчитываем хвост. Тестируем стыки сегментов на пропуски и повторы. UI во всех случаях получает одинаковые события.
+The first engine candidate was whisper.cpp with Metal and multilingual weights. Core ML could be measured separately on the same recordings. The upstream streaming example periodically decodes a sliding window. [whisper.cpp](https://github.com/ggml-org/whisper.cpp) · [Streaming example](https://github.com/ggml-org/whisper.cpp/blob/master/examples/stream/README.md)
 
-Helper запускается приложением по пути внутри пакета. Через унаследованные каналы передаются ограниченные по длине сообщения с версией протокола и бинарные блоки PCM. Команды охватывают загрузку выбранной модели, начало, аудио, завершение и отмену. Один процесс может обслужить несколько последовательных диктовок с прогретой моделью. При закрытии каналов helper завершается. При зависании приложение ограничивает ожидание, завершает процесс и предлагает повтор по сохранённому аудио. Локальная текстовая модель загружается только при выбранной постобработке. На Mac с малым объёмом памяти отдельно измеряем цену одновременной резидентности обеих моделей.
+The microphone callback copies samples into a bounded, preallocated ring buffer. Another thread converts them to mono 16 kHz PCM, holds the current utterance in memory and feeds the speech worker. The callback must avoid waiting on the disk, engine or UI. Under load, drop stale draft updates first. If samples are lost, report an interrupted recording. Use measured memory to bound recording time and warn near the limit.
 
-## Ввод у курсора
+A draft has a revision and may revise the last words. The prototype repeatedly decodes overlapping audio. On release the final transcript uses all captured samples. Measure final decoding time on long phrases. If it becomes too slow, retain completed timestamped segments and finish only the tail. Test for duplicate or missing words at joins. The UI should receive the same event types in both cases.
 
-Нативный адаптер фиксирует приложение, окно, доступный AX-элемент и положение выделения. Перед вводом сверяет их с текущей целью. Для защищённого поля ввод отключён. Если цель нельзя надёжно опознать, автоматический ввод приостанавливается. Панель остаётся видимой и позволяет явно выбрать подходящее поле. Само окно панели должно показываться и принимать щелчок отмены с сохранением фокуса редактора. Способ связать такое окно AppKit с GPUI проверяем на первом прототипе.
+Launch the helper from inside the bundle. Use bounded, versioned messages over inherited pipes for model loading, start, PCM, finish and cancellation. A warm process can serve successive dictations and exits when its pipes close. Bound waits for hung helpers. The design called for terminating a stuck helper and offering a retry with retained audio. Load the local text model only when editing is enabled. Measure the cost of keeping both models resident on lower-memory Macs.
 
-Основной кандидат — запись в доступный для изменения AXSelectedText. Для проверенных полей, где этот способ заведомо недоступен, рассматриваем Unicode-события Core Graphics. Некоторые приложения интерпретируют клавиатурные события самостоятельно. При проверке учитываем кириллицу, emoji, выделение текста и переносы строк в чатах и терминалах. Буфер обмена исключён из обоих путей. [Атрибут выделения](https://developer.apple.com/documentation/applicationservices/kaxselectedtextattribute) · [Запись атрибута](https://developer.apple.com/documentation/applicationservices/1460434-axuielementsetattributevalue) · [Unicode-события](https://developer.apple.com/documentation/coregraphics/cgevent/keyboardsetunicodestring%28stringlength%3Aunicodestring%3A%29)
+### Text delivery
 
-Важно различать «цель отклонена до записи», «запись выполнена» и «попытка отправлена, результат неизвестен». При последнем исходе нельзя автоматически переключаться на другой метод или повторять фразу. Пользователь мог уже получить текст целиком или частично. Панель удерживает фразу и предлагает проверить поле. Между проверкой фокуса и доставкой события есть гонка. Для каждого проверенного приложения документируем границы совместимости; успешная отправка события сама по себе не доказывает изменение текста.
+Capture the application, window, AX element and selection. Validate them again before delivery. Reject secure fields and suspend automatic delivery when the target is uncertain. The panel should let the user choose a compatible field, and clicking its cancel button should preserve the editor's focus. The first prototype was intended to test the nonactivating AppKit window with GPUI.
 
-## Модели, постобработка и данные
+Prefer writable `AXSelectedText`. For validated fields where it is unavailable, consider Core Graphics Unicode events. Editors vary in their handling of keyboard input. Test Cyrillic, emoji, selection replacement and line breaks in chat clients and terminals. Both mechanisms preserve the clipboard. [Selection attribute](https://developer.apple.com/documentation/applicationservices/kaxselectedtextattribute) · [Writing an AX attribute](https://developer.apple.com/documentation/applicationservices/1460434-axuielementsetattributevalue) · [Unicode keyboard events](https://developer.apple.com/documentation/coregraphics/cgevent/keyboardsetunicodestring%28stringlength%3Aunicodestring%3A%29)
 
-- Каталог первой версии поставляется с приложением. Запись задаёт назначение модели, совместимый движок, версию, URL, размер, SHA-256 каждого артефакта и лицензию. Установка идёт во временный каталог на том же томе. Только после проверки всех файлов каталог атомарно переименовывается. Загрузка и выбор активной модели — отдельные операции.
-- На версию модели приходится одна задача скачивания. При перезапуске незавершённая загрузка получает состояние «Прервана». Продолжение возможно при подтверждённой идентичности удалённого файла и поддержке диапазонов, иначе скачиваем заново. В тесты входят заполнение диска, неверная контрольная сумма и выход приложения перед переименованием.
-- У каждой активной сессии есть ссылка на установленную версию. Удаление откладывается до освобождения этой ссылки движком. При старте сверяем выбранную модель с файлами на диске и предлагаем повторную установку, если она пропала.
-- Для локального редактирования кандидат — встроенный helper с llama.cpp и выбранными GGUF-весами. Облачный адаптер получает окончательную расшифровку и инструкцию редактирования. Только явный режим «В облаке» разрешает передавать текст провайдеру. При таймауте, пустом ответе или падении локального движка в панели доступно «Ввести исходный текст». [llama.cpp](https://github.com/ggml-org/llama.cpp)
-- Модели и версионированные настройки лежат в Application Support. Настройки записываются атомарно, миграции проверяются на файлах старых версий. API-ключи хранятся в Keychain. После финального распознавания и, если включено, постобработки сессия один раз передаёт в историю запись, расшифровку и результат обработки. Запись и отсечение старых строк выполняются одной транзакцией в `History/entries.sqlite3`. Отмена до получения результата отбрасывает черновик. Восстановление ввода не дублирует запись.
-- Локальная диагностика содержит версию приложения и движка, модель, длительность этапов и код ошибки. Текст, аудио, имена окон, ключи и тела запросов в логи не попадают. Для разбора задержки отдельно измеряем старт захвата, первый черновик, время от отпускания до финала и время постобработки.
+Keep three outcomes distinct. A target can be rejected before a write, a write can be confirmed, or an attempted write can have an unknown result. In the last case, keep the phrase and ask the user to check the field. Never retry automatically or switch insertion methods, since some or all of the phrase may already have arrived. Focus can change between validation and delivery. Document compatibility per app and field, and verify the field contents after sending an event.
 
-## Порядок проверки и поставки
+### Models, editing and storage
 
-1. **Сначала проверить чужое поле.** Минимальный подписанный .app показывает панель, ловит нажатие и отпускание, вводит фиксированную фразу. Проверить TextEdit, поле в браузере, редактор на Electron и реальное рабочее приложение пользователя. Отдельно — переход между двумя полями одного окна, защищённое поле, полноэкранный режим, клик по панели и отзыв разрешения. Проверить неизменность счётчика изменений pasteboard и отсутствие автоматической отправки сообщения. Результат — таблица «приложение / поле / метод / ограничения».
-2. **Затем измерить диктовку.** На младшем поддерживаемом Mac и наборе коротких и длинных фраз RU/EN сравнить модели на одинаковом аудио. Зафиксировать ошибки слов и имён, p50/p95 до первого черновика и от отпускания до ввода, пик памяти и разницу холодного и тёплого запуска. Предварительный ориентир для тёплой модели и пятисекундной фразы — первый черновик за секунду от начала речи и ввод за секунду после отпускания при выключенной постобработке. Это цели прототипа. Нижнюю границу железа, версию macOS и модель по умолчанию выбрать по результатам.
-3. **Собрать сквозной сценарий.** Сначала завершённая локальная диктовка с отменой и восстановлением, затем менеджер моделей, потом локальная и облачная постобработка. В CI проигрывать события сессии с подставными часами и адаптерами, включая поздние ответы и неопределённую доставку. Проверять аварийное завершение helper и установку моделей на временной файловой системе. Для релиза повторять сквозной тест в настоящей пользовательской сессии macOS.
-4. **Доставлять воспроизводимую сборку.** Фиксировать ревизию GPUI, Cargo.lock и версии нативных движков. Собирать arm64-пакет по тегу, подписывать вложенные исполняемые файлы и приложение Developer ID, проходить нотарификацию и прикреплять билет. Проверять запуск скачанного пакета на чистом Mac, выдачу разрешений, работу офлайн с загруженными весами и обновление предыдущей версии с сохранением настроек. [GPUI](https://gpui.rs/) · [Нотарификация macOS](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+- Ship a catalog with each model's purpose, engine, version, URL, size, SHA-256 and license. Download into a temporary directory on the same volume and atomically rename it after verification. Keep installation and model selection separate.
+- Run one download job per model version. Mark interrupted jobs after a restart. Resume only when the remote file identity and range support are confirmed. Exercise disk-full, checksum mismatch and exit-before-rename cases.
+- Give each active session a reference to its installed version. The design deferred removal until the engine released that reference. On startup, verify selected files and offer reinstallation for missing weights.
+- Use a bundled llama.cpp helper for GGUF editing. Cloud requests contain the final transcript and editing prompt only in explicit cloud mode. On timeout, empty output or a local engine crash, keep the raw text available for insertion. [llama.cpp](https://github.com/ggml-org/llama.cpp)
+- Keep models and versioned settings in Application Support, write settings atomically and test migrations. Store API keys in Keychain. After recognition and optional editing, commit the audio, original and edit once to history. One SQLite transaction inserts the entry and trims old rows in `History/entries.sqlite3`. Cancellation discards drafts and recovery must not duplicate an entry.
+- Keep diagnostics to versions, model identity, stage durations and error codes. Exclude text, audio, window names, keys and request bodies. Measure capture start, first draft, release to final text and editing separately.
+
+### Validation and shipping
+
+1. **Insertion compatibility.** Use a signed minimal app to capture press and release, show a panel and insert a fixed phrase. Test TextEdit, a browser, an Electron editor and a real day-to-day app. Switch fields within one window, try secure fields and full screen, click the panel and revoke permissions. Verify that the pasteboard change count stays constant and no message is sent. Record the app, field, insertion method and limits.
+2. **Dictation latency and accuracy.** Compare models on identical short and long Russian and English samples on the least capable supported Mac. Measure word and name errors, p50/p95 time to first draft and time from release to insertion, peak memory and cold versus warm starts. The prototype goal for a warm model and a five-second utterance was one second to first draft and one second from release to insertion with editing off. Select minimum hardware, macOS and default model from the results.
+3. **End-to-end behavior.** Verify cancellation and recovery for local dictation, then exercise model management and both editing paths. The plan called for CI session tests with fake clocks and adapters covering late answers and uncertain delivery. Exercise helper crashes and model installation in a temporary filesystem. Before release, repeat end-to-end tests in an interactive macOS user session.
+4. **Reproducible packaging.** Pin GPUI, the workspace lockfile and native engines. Build arm64 from the tag, sign nested executables and the app with Developer ID, notarize and staple. Test the downloaded package and permission prompts on a clean Mac, offline use with installed weights and upgrading a previous version with its settings intact. [GPUI](https://gpui.rs/) · [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)

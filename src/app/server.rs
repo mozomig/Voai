@@ -1,5 +1,6 @@
 //! Serializes local-server discovery and publishes only the most recent request.
 use std::{sync::mpsc, thread};
+use voai_l10n::tr;
 
 type DiscoveryResult = (Option<bool>, Result<Vec<String>, String>);
 
@@ -50,7 +51,9 @@ impl ServerDiscovery {
         let (has_key, result) = match worker.try_recv() {
             Ok(value) => value,
             Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => (None, Err("Поиск моделей прерван".into())),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                (None, Err(tr("app.models.discovery_interrupted").into()))
+            }
         };
         self.worker = None;
         if let Some(next) = self.next.take() {
@@ -63,7 +66,7 @@ impl ServerDiscovery {
         match result {
             Ok(list) if list.is_empty() => {
                 self.models.clear();
-                self.error = "Сервер доступен, но список моделей пуст.".into()
+                self.error = tr("app.models.server_empty").into()
             }
             Ok(list) => self.models = list,
             Err(text) => self.error = text,

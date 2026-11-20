@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use voai_l10n::{tf, tr};
 
 use super::{Engine, style::*};
 use crate::app::{Command, ModelState, Phase, Snapshot};
@@ -77,15 +78,15 @@ fn configure_panel(window: &Window, compact: bool) {
 
 pub(super) fn phase_title(phase: Phase) -> &'static str {
     match phase {
-        Phase::Idle => "Готов к диктовке",
-        Phase::Listening => "Слушаю",
-        Phase::Finishing => "Распознаю…",
-        Phase::Editing => "Редактирую…",
-        Phase::Inserting => "Вставляю текст…",
-        Phase::RecoverFocus => "Выберите поле ввода",
-        Phase::RecoverText => "Обработка недоступна",
-        Phase::Uncertain => "Проверьте поле ввода",
-        Phase::Error => "Диктовка прервана",
+        Phase::Idle => tr("ui.phase.ready"),
+        Phase::Listening => tr("ui.phase.listening"),
+        Phase::Finishing => tr("ui.phase.transcribing"),
+        Phase::Editing => tr("ui.phase.editing"),
+        Phase::Inserting => tr("ui.phase.inserting"),
+        Phase::RecoverFocus => tr("ui.phase.focus"),
+        Phase::RecoverText => tr("ui.phase.edit_failed"),
+        Phase::Uncertain => tr("ui.phase.uncertain"),
+        Phase::Error => tr("ui.phase.error"),
     }
 }
 
@@ -157,28 +158,29 @@ impl Render for Panel {
             )]);
         }
         let hint = match s.phase {
-            Phase::Listening if s.elapsed_secs >= 300 => {
-                "Запись остановлена. Отпустите клавиши.".into()
-            }
+            Phase::Listening if s.elapsed_secs >= 300 => tr("ui.panel.limit").into(),
             Phase::Listening if s.elapsed_secs >= 290 => {
-                format!("До конца записи — {} с", 300 - s.elapsed_secs)
+                tf!("ui.panel.remaining", seconds = 300 - s.elapsed_secs)
             }
-            Phase::Listening => "Отпустите, чтобы вставить текст".into(),
+            Phase::Listening => tr("ui.panel.release").into(),
             Phase::RecoverFocus => {
-                format!("Поставьте курсор и нажмите {}", shortcut_label(&s.shortcut))
+                tf!(
+                    "ui.panel.focus_hint",
+                    shortcut = shortcut_label(&s.shortcut)
+                )
             }
             _ => String::new(),
         };
         let setup: Option<(&str, Box<dyn Action>)> = if s.phase != Phase::Error {
             None
         } else if !s.access_allowed || !s.mic_allowed {
-            Some(("Настроить доступ", Box::new(super::OpenPermissions)))
+            Some((tr("ui.panel.permissions"), Box::new(super::OpenPermissions)))
         } else if !s
             .models
             .iter()
             .any(|m| !m.text_model && matches!(m.state, ModelState::Selected))
         {
-            Some(("Выбрать модель", Box::new(super::OpenSpeechModels)))
+            Some((tr("ui.model.choose"), Box::new(super::OpenSpeechModels)))
         } else {
             None
         };
@@ -259,13 +261,13 @@ impl Render for Panel {
                             .line_height(px(22.))
                             .child(live_text)
                             .when(listening && empty, |d| {
-                                d.child(text("Говорите…", 17., p.muted))
+                                d.child(text(tr("ui.panel.speak"), 17., p.muted))
                             }),
                     ),
             )
             .when(s.phase == Phase::RecoverText, |v| {
                 v.child(row().mt_1().child(
-                    primary_button("insert-original", "Вставить без правок", p).on_click(
+                    primary_button("insert-original", tr("ui.panel.insert_original"), p).on_click(
                         cx.listener(|this, _, _, _| {
                             this.engine.borrow_mut().dispatch(Command::UseOriginal)
                         }),
@@ -284,9 +286,9 @@ impl Render for Panel {
                         button(
                             "cancel",
                             if recovering || s.phase == Phase::Inserting {
-                                "Закрыть  Esc"
+                                tr("ui.panel.close")
                             } else {
-                                "Отменить  Esc"
+                                tr("ui.panel.cancel")
                             },
                             p,
                         )

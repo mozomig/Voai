@@ -5,6 +5,7 @@ use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
 };
 use std::sync::Arc;
+use voai_l10n::{tf, tr};
 
 pub(super) type NotifyKey = Arc<dyn Fn(GlobalHotKeyEvent) + Send + Sync>;
 
@@ -37,10 +38,10 @@ impl Shortcuts {
                 .mods
                 .intersects(Modifiers::ALT | Modifiers::CONTROL | Modifiers::META)
         {
-            return Err("Добавьте ⌥, ⌘ или ⌃ к сочетанию.".into());
+            return Err(tr("app.shortcuts.need_modifier").into());
         }
         if next.key == Code::Escape {
-            return Err("Esc используется для отмены диктовки.".into());
+            return Err(tr("app.shortcuts.escape_reserved").into());
         }
         if self.dictation == Some(next) {
             return Ok(());
@@ -58,9 +59,13 @@ impl Shortcuts {
                 })
             })?)
         } else {
-            self.manager
-                .register(next)
-                .map_err(|e| format!("Не удалось назначить {shortcut}: {e}"))?;
+            self.manager.register(next).map_err(|e| {
+                tf!(
+                    "app.shortcuts.assign_failed",
+                    shortcut = shortcut,
+                    error = e
+                )
+            })?;
             None
         };
         if let Err(error) = self.suspend() {

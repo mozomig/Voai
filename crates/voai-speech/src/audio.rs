@@ -2,6 +2,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicU8, Ordering},
 };
+use voai_l10n::{tf, tr};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, FromSample, Sample, SizedSample, Stream, StreamConfig};
@@ -22,17 +23,15 @@ impl Microphone {
         let host = cpal::default_host();
         let device = match name {
             Some(name) => crate::devices::selected_device(&host, name)?,
-            None => host
-                .default_input_device()
-                .ok_or("Микрофон недоступен. Проверьте выбранное устройство.")?,
+            None => host.default_input_device().ok_or(tr("mic.unavailable"))?,
         };
         let supported = device
             .default_input_config()
-            .map_err(|e| format!("Не удалось открыть микрофон: {e}"))?;
+            .map_err(|e| tf!("mic.open", e = e))?;
         let config = supported.config();
         let rate = config.sample_rate as usize;
         if !(8_000..=384_000).contains(&rate) || config.channels == 0 {
-            return Err("Неподдерживаемая конфигурация микрофона".into());
+            return Err(tr("mic.config").into());
         }
         let converter = Converter::new(rate)?;
         let (producer, samples) = RingBuffer::new(rate * 2);
@@ -50,11 +49,9 @@ impl Microphone {
             cpal::SampleFormat::I32 => {
                 build_stream::<i32>(&device, &config, producer, issue.clone(), state)
             }
-            format => return Err(format!("Неподдерживаемый формат микрофона: {format}")),
+            format => return Err(tf!("mic.format", format = format)),
         }?;
-        stream.play().map_err(|e| {
-            format!("Не удалось запустить запись. Проверьте доступ к микрофону: {e}")
-        })?;
+        stream.play().map_err(|e| tf!("mic.start", e = e))?;
         Ok(Self {
             stream: Some(stream),
             samples,
@@ -109,8 +106,8 @@ impl Microphone {
 
     pub(super) fn interruption(&self) -> Option<&'static str> {
         match self.issue.load(Ordering::Acquire) {
-            1 => Some("Переполнен аудиобуфер"),
-            2 => Some("Потеряна связь с микрофоном"),
+            1 => Some(tr("mic.overflow")),
+            2 => Some(tr("mic.lost")),
             _ => None,
         }
     }
@@ -171,7 +168,7 @@ where
             move |_| stream_issue.store(2, Ordering::Release),
             None,
         )
-        .map_err(|e| format!("Не удалось открыть поток микрофона: {e}"))
+        .map_err(|e| tf!("mic.stream", e = e))
 }
 
 /// Band-limited resampling with the filter delay removed and its tail flushed at release.

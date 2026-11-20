@@ -7,6 +7,7 @@ use std::{
     fs::File,
     io::{BufReader, Read, Seek},
 };
+use voai_l10n::tr;
 
 // (elements per block, encoded bytes per block), from whisper.cpp's pinned
 // ggml-common.h. Type numbers are file-format identifiers, not model ftypes.
@@ -33,7 +34,7 @@ fn layout(t: u32) -> Result<(u64, u64)> {
         23 => (256, 136),
         29 => (256, 56),
         39 => (32, 17),
-        _ => bail!("Неподдерживаемый тип весов whisper.cpp"),
+        _ => bail!(tr("whisper.weight.type")),
     })
 }
 
@@ -57,7 +58,7 @@ pub(super) fn check_weights(
         23 => 29,
         24 => 30,
         25 => 39,
-        _ => bail!("Неподдерживаемая квантизация whisper.cpp"),
+        _ => bail!(tr("whisper.quant")),
     };
     let (elements, bytes_per_block) = layout(t)?;
     let width = u64::from(width);
@@ -66,7 +67,7 @@ pub(super) fn check_weights(
     let start = r.stream_position()?;
     ensure!(
         start < file_bytes && weights / elements * bytes_per_block <= file_bytes - start,
-        "Размер весов не соответствует параметрам Whisper"
+        tr("whisper.weight.size")
     );
 
     let mut names = HashSet::new();
@@ -76,7 +77,7 @@ pub(super) fn check_weights(
         let tensor_type = read_u32(r)?;
         ensure!(
             (1..=4).contains(&dimensions) && (1..=256).contains(&name_bytes) && names.len() < 4096,
-            "Некорректное описание тензора Whisper"
+            tr("whisper.tensor.description")
         );
         let (block, size) = layout(tensor_type)?;
         let mut elements = 1u64;
@@ -86,7 +87,7 @@ pub(super) fn check_weights(
                 dim > 0
                     && dim <= i32::MAX as u64 / elements
                     && (axis != 0 || dim.is_multiple_of(block)),
-                "Некорректный размер тензора Whisper"
+                tr("whisper.tensor.size")
             );
             elements *= dim;
         }
@@ -94,16 +95,16 @@ pub(super) fn check_weights(
         r.read_exact(&mut name)?;
         ensure!(
             std::str::from_utf8(&name).is_ok() && !name.contains(&0) && names.insert(name),
-            "Некорректное или повторное имя тензора Whisper"
+            tr("whisper.tensor.name")
         );
         let payload = elements / block * size;
         ensure!(
             r.stream_position()? + payload <= file_bytes,
-            "Файл весов Whisper обрезан"
+            tr("whisper.weights.truncated")
         );
         r.seek_relative(payload as i64)?;
     }
-    ensure!(!names.is_empty(), "В файле отсутствуют веса Whisper");
+    ensure!(!names.is_empty(), tr("whisper.weights.missing"));
     Ok(())
 }
 

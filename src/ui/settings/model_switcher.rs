@@ -1,5 +1,6 @@
 use super::*;
 use gpui_component::menu::PopupMenu;
+use voai_l10n::{tf, tr};
 
 impl Settings {
     pub(super) fn model_switcher(&self, p: Palette, cx: &Context<Self>) -> Div {
@@ -10,7 +11,11 @@ impl Settings {
             .border_t_1()
             .border_color(p.rule)
             .when(matches!(self.page, Page::Files | Page::Telegram), |d| {
-                d.child(text("Для диктовки", 10., p.muted).mb_1().pl_1())
+                d.child(
+                    text(tr("ui.switcher.dictation"), 10., p.muted)
+                        .mb_1()
+                        .pl_1(),
+                )
             })
             .child(
                 col()
@@ -40,24 +45,24 @@ impl Settings {
         let local_name = local.map(|m| m.name.as_str());
         let (title, model) = if processing {
             match s.mode {
-                Mode::Off => ("Обработка".to_owned(), None),
-                Mode::Local => ("Обработка".into(), local_name),
+                Mode::Off => (tr("ui.page.editing").to_owned(), None),
+                Mode::Local => (tr("ui.page.editing").into(), local_name),
                 Mode::Server => (
-                    "На сервере".into(),
+                    tr("ui.switcher.server").into(),
                     (!s.server_model.is_empty()).then_some(s.server_model.as_str()),
                 ),
                 Mode::Cloud => (
-                    format!("Облако · {}", s.provider),
+                    tf!("ui.switcher.cloud", provider = &s.provider),
                     Some(s.cloud_model.as_str()),
                 ),
             }
         } else {
-            ("Речь".into(), local_name)
+            (tr("ui.models.speech").into(), local_name)
         };
         let value = model.unwrap_or(if processing && s.mode == Mode::Off {
-            "Выключена"
+            tr("ui.switcher.off")
         } else {
-            "Выбрать"
+            tr("ui.action.select")
         });
         let display = if local.is_some_and(|m| m.local_path.is_some())
             && (!processing || s.mode == Mode::Local)
@@ -123,7 +128,7 @@ impl Settings {
         if processing {
             let engine = self.engine.clone();
             menu = menu.item(
-                PopupMenuItem::new("Без обработки")
+                PopupMenuItem::new(tr("ui.edit.none"))
                     .checked(s.mode == Mode::Off)
                     .on_click(move |_, _, _| {
                         engine.borrow_mut().dispatch(Command::SetMode(Mode::Off))
@@ -131,7 +136,7 @@ impl Settings {
             );
             match s.mode {
                 Mode::Server if !s.server_models.is_empty() => {
-                    menu = menu.label("Локальный сервер");
+                    menu = menu.label(tr("ui.mode.server"));
                     for name in &s.server_models {
                         menu = menu.item(self.model_choice(
                             name,
@@ -142,7 +147,7 @@ impl Settings {
                     }
                 }
                 Mode::Cloud => {
-                    menu = menu.label(format!("Облако · {}", s.provider));
+                    menu = menu.label(tf!("ui.switcher.cloud", provider = &s.provider));
                     for name in self.cloud_provider().models() {
                         menu = menu.item(self.model_choice(
                             name,
@@ -165,7 +170,7 @@ impl Settings {
             .peekable();
         if models.peek().is_some() {
             if processing {
-                menu = menu.label("На этом Mac");
+                menu = menu.label(tr("ui.switcher.on_mac"));
             }
             for m in models {
                 let selected = matches!(m.state, ModelState::Selected)
@@ -186,8 +191,8 @@ impl Settings {
             menu = menu.separator();
         }
         let catalog = owner.clone();
-        menu = menu.item(
-            PopupMenuItem::new("Открыть каталог").on_click(move |_, window, cx| {
+        menu = menu.item(PopupMenuItem::new(tr("ui.model.catalogue_open")).on_click(
+            move |_, window, cx| {
                 let _ = catalog.update(cx, |view, cx| {
                     view.model_tab = if processing {
                         ModelTab::Text
@@ -197,16 +202,18 @@ impl Settings {
                     view.file_dialog_error = None;
                     view.navigate(Page::Models, window, cx);
                 });
-            }),
-        );
+            },
+        ));
         if processing {
             let owner = owner.clone();
-            menu = menu.item(PopupMenuItem::new("Настройки обработки").on_click(
-                move |_, window, cx| {
-                    let _ =
-                        owner.update(cx, |view, cx| view.navigate(Page::Processing, window, cx));
-                },
-            ));
+            menu = menu.item(
+                PopupMenuItem::new(tr("ui.switcher.edit_settings")).on_click(
+                    move |_, window, cx| {
+                        let _ = owner
+                            .update(cx, |view, cx| view.navigate(Page::Processing, window, cx));
+                    },
+                ),
+            );
         }
         menu
     }

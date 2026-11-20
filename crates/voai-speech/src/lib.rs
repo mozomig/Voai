@@ -1,4 +1,5 @@
 //! A recording owns the microphone until release or cancellation. The UI only polls events.
+use voai_l10n::{tf, tr};
 mod audio;
 mod denoise;
 mod devices;
@@ -140,12 +141,12 @@ fn start_with_source(
     open: impl FnOnce(Arc<AtomicU8>) -> Result<audio::Microphone, String> + Send + 'static,
 ) -> Result<Recording, String> {
     if !model.is_file() {
-        return Err("Файл речевой модели отсутствует".into());
+        return Err(tr("speech.model.missing").into());
     }
     if language.as_deref().is_some_and(|s| {
         s.is_empty() || s.len() > 12 || !s.bytes().all(|c| c.is_ascii_alphabetic() || c == b'-')
     }) {
-        return Err("Некорректный код языка".into());
+        return Err(tr("speech.language.invalid").into());
     }
     let state = Arc::new(AtomicU8::new(RECORDING));
     let events = Arc::new(Mutex::new(Mailbox::default()));
@@ -217,12 +218,12 @@ impl Session<'_> {
             let reason = mic.interruption().or_else(|| {
                 if last_input.elapsed() >= INPUT_TIMEOUT {
                     Some(if pcm.is_empty() {
-                        "Нет звука. Проверьте микрофон и доступ к нему."
+                        tr("speech.mic.silent")
                     } else {
-                        "Микрофон перестал передавать звук"
+                        tr("speech.mic.stalled")
                     })
                 } else {
-                    (pcm.len() >= MAX_SAMPLES).then_some("Прошло пять минут")
+                    (pcm.len() >= MAX_SAMPLES).then(|| tr("speech.limit.time"))
                 }
             });
             if let Some(reason) = reason {
@@ -233,9 +234,7 @@ impl Session<'_> {
                 self.events
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .interruption = Some(format!(
-                    "{reason}. Отпустите клавиши, чтобы вставить записанную часть."
-                ));
+                    .interruption = Some(tf!("speech.release.partial", reason = reason));
                 while self.state.load(Ordering::Acquire) == RECORDING {
                     thread::sleep(Duration::from_millis(20));
                 }
@@ -296,7 +295,7 @@ impl Session<'_> {
             *pending = None;
         }
         if pending.is_some_and(|start| start.elapsed() > Duration::from_secs(60)) {
-            return Err("Whisper не ответил вовремя".into());
+            return Err(tr("speech.timeout").into());
         }
         if pending.is_none() && pcm.len() - *last >= RATE {
             *last = pcm.len();
@@ -332,7 +331,7 @@ impl Session<'_> {
             }
             thread::sleep(Duration::from_millis(15));
         }
-        Err("Распознавание остановлено".into())
+        Err(tr("speech.stopped").into())
     }
 }
 

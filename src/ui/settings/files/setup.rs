@@ -1,5 +1,6 @@
 use super::*;
 use gpui_component::menu::PopupMenu;
+use voai_l10n::{tf, tr};
 
 impl Settings {
     pub(super) fn file_setup(&self, p: Palette, cx: &Context<Self>) -> Div {
@@ -11,35 +12,37 @@ impl Settings {
             .as_deref()
             .filter(|_| files.using_local_voices && files.identify_speakers && files.voices_ready);
         let voices = if !files.identify_speakers {
-            "Без спикеров"
+            tr("ui.files.without_speakers")
         } else if !files.voices_ready {
-            "Выбрать модель"
+            tr("ui.model.choose")
         } else if let Some(path) = local_voices {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .unwrap_or("Подключённая папка")
+                .unwrap_or(tr("ui.model.linked_folder"))
         } else {
             "Pyannote 3.0 + CAM++"
         };
         let mut setup = col()
             .gap_1()
-            .child(text("Аудио и видео обрабатываются на этом Mac.", 13., p.muted).mb_2());
+            .child(text(tr("ui.files.local_hint"), 13., p.muted).mb_2());
         for (tab, title, value) in [
             (
                 ModelTab::Speech,
-                "Распознавание",
-                speech.map(|m| m.name.as_str()).unwrap_or("Выбрать модель"),
+                tr("ui.files.recognition"),
+                speech
+                    .map(|m| m.name.as_str())
+                    .unwrap_or(tr("ui.model.choose")),
             ),
-            (ModelTab::Speakers, "Спикеры", voices),
+            (ModelTab::Speakers, tr("ui.files.speakers"), voices),
             (
                 ModelTab::Text,
-                "Обработка текста",
+                tr("ui.files.editing"),
                 text_model
                     .map(|m| m.name.as_str())
                     .unwrap_or(if files.text_model.is_some() {
-                        "Модель недоступна"
+                        tr("ui.model.unavailable")
                     } else {
-                        "Без обработки"
+                        tr("ui.edit.none")
                     }),
             ),
         ] {
@@ -79,9 +82,9 @@ impl Settings {
             setup = setup.child(Self::setting(p, title, "", picker));
         }
         let import_label = if files.identify_speakers && !files.voices_ready {
-            "Расшифровать без спикеров…"
+            tr("ui.files.transcribe_without")
         } else {
-            "Выбрать файл…"
+            tr("ui.files.choose_file")
         };
         let actions = row()
             .gap_2()
@@ -98,7 +101,7 @@ impl Settings {
                     Button::new("file-back")
                         .small()
                         .ghost()
-                        .label("К расшифровке")
+                        .label(tr("ui.files.back"))
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.files_ui.configuring = false;
                             cx.notify();
@@ -130,7 +133,7 @@ impl Settings {
             .scrollable(true);
         if tab == ModelTab::Speakers {
             menu = menu.item(self.file_option(
-                "Без спикеров",
+                tr("ui.files.without_speakers"),
                 !files.identify_speakers,
                 || FileCommand::SetIdentifySpeakers(false),
             ));
@@ -144,7 +147,7 @@ impl Settings {
             if let Some(path) = &files.voices_local {
                 let name = path.file_name().unwrap_or_default().to_string_lossy();
                 menu = menu.item(self.file_option(
-                    format!("Папка · {name}"),
+                    tf!("ui.model.folder_name", name = name),
                     files.identify_speakers && files.using_local_voices && files.voices_ready,
                     || FileCommand::UseLocalVoices,
                 ));
@@ -153,7 +156,7 @@ impl Settings {
             let is_text = tab == ModelTab::Text;
             if is_text {
                 menu = menu.item(self.file_option(
-                    "Без обработки",
+                    tr("ui.edit.none"),
                     files.text_model.is_none(),
                     || FileCommand::SetText(None),
                 ));
@@ -181,18 +184,18 @@ impl Settings {
             menu = menu.separator();
         }
         let catalog = owner.clone();
-        menu = menu.item(
-            PopupMenuItem::new("Открыть каталог").on_click(move |_, window, cx| {
+        menu = menu.item(PopupMenuItem::new(tr("ui.model.catalogue_open")).on_click(
+            move |_, window, cx| {
                 let _ = catalog.update(cx, |view, cx| {
                     view.model_tab = tab;
                     view.file_dialog_error = None;
                     view.navigate(Page::Models, window, cx);
                 });
-            }),
-        );
+            },
+        ));
         if tab == ModelTab::Text {
             let owner = owner.clone();
-            menu = menu.item(PopupMenuItem::new("Инструкция для обработки").on_click(
+            menu = menu.item(PopupMenuItem::new(tr("ui.edit.prompt_settings")).on_click(
                 move |_, window, cx| {
                     let _ =
                         owner.update(cx, |view, cx| view.navigate(Page::Processing, window, cx));

@@ -3,6 +3,7 @@ use block2::RcBlock;
 use objc2::{MainThreadMarker, rc::Retained, runtime::AnyObject};
 use objc2_app_kit::{NSApplication, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType};
 use std::ptr::NonNull;
+use voai_l10n::tr;
 
 pub(crate) const SHORTCUT: &str = "MetaRight";
 const KEY_CODE: u16 = 0x36; // kVK_RightCommand
@@ -57,7 +58,7 @@ impl RightCommandMonitor {
             &global,
         )
         .map(Monitor)
-        .ok_or("Не удалось отслеживать правый ⌘ в других приложениях.")?;
+        .ok_or(tr("app.shortcuts.monitor_global"))?;
         let local = RcBlock::new(move |event: NonNull<NSEvent>| {
             observe(event);
             event.as_ptr()
@@ -67,7 +68,7 @@ impl RightCommandMonitor {
             NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::FlagsChanged, &local)
         }
         .map(Monitor)
-        .ok_or("Не удалось отслеживать правый ⌘ в Voai.")?;
+        .ok_or(tr("app.shortcuts.monitor_local"))?;
         Ok(Self {
             _global: global,
             _local: local,

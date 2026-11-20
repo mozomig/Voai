@@ -1,24 +1,24 @@
 # Voai
 
-Диктовка и расшифровка записей для **macOS 14+ на Apple Silicon**. Поставьте курсор в заметку, сообщение или редактор кода. Зажмите **⌥ Пробел**, скажите фразу и отпустите клавиши. Voai введёт текст у курсора. Буфер обмена останется как был.
+Hold **⌥ Space** and speak. Release the keys and Voai types the words at your cursor, leaving your clipboard alone. Voai runs on **macOS 14 or later on Apple Silicon**.
 
-![Voai на Mac. Миниатюрный виджет диктовки и окно расшифровки с репликами двух собеседников](docs/images/voai.png)
+![Voai on Mac, with the compact dictation widget and a transcript showing two speakers and timestamps](docs/images/voai.png)
 
-## Что можно делать
+## What you can do
 
-- **Диктовать в текстовое поле.** Пока вы говорите, в плавающей панели появляется черновик. Если хотите видеть только уровень голоса, выберите компактный виджет. Клавишу диктовки можно сменить, например на правый ⌘. Последние 20 диктовок доступны в истории вместе со звуком.
-- **Разобрать интервью или созвон.** Откройте аудио или видео. Можно получить сплошной текст или диалог с таймкодами. Нажмите на время рядом с репликой, чтобы послушать оригинал. Имена собеседников можно исправить, результат — сохранить в TXT или SRT.
-- **Прочитать голосовое из Telegram.** Перешлите голосовое сообщение, кружок или видео своему боту. Пока Voai запущена на Mac, бот пришлёт расшифровку в тот же личный чат.
+- **Dictate into a text field.** Watch the words appear in a floating panel, or switch to a small waveform above the field. You can assign the shortcut to a single key, including right Command. History keeps the audio and text from your last 20 dictations.
+- **Transcribe an interview or meeting.** Open an audio or video file to get a readable transcript. Turn on speaker identification for a timestamped conversation. Click a timestamp to hear the original, correct a speaker's name, then export plain text or SRT subtitles.
+- **Read a Telegram voice message.** Forward a voice note, audio file or video to your own bot. While Voai is running on your Mac, the bot replies with the transcript in your private chat.
 
-## Где обрабатывается речь
+## Where your speech goes
 
-Whisper распознаёт речь на Mac с помощью Metal. Модель можно скачать в Voai или подключить с диска. После загрузки моделей диктовка и расшифровка файлов работают офлайн.
+Whisper transcribes on your Mac using Metal. Download a model in Voai or point it at one you already have. Once the models are on disk, dictation and file transcription work offline.
 
-Редактирование текста включается отдельно. Для диктовки можно выбрать модель GGUF, запущенный на Mac сервер Ollama или LM Studio, либо OpenAI или Anthropic со своим ключом. В облачном режиме выбранному провайдеру уходят инструкция и текст фразы. Для файлов и сообщений Telegram обработка текста выполняется локально.
+Text editing is optional. For dictation, use a GGUF model, a local Ollama or LM Studio server, or your own OpenAI or Anthropic API key. In cloud mode, the selected provider receives your instructions and transcript. File and Telegram transcripts use local models for editing.
 
-## Как попробовать
+## Try it
 
-Пока Voai доступна в исходниках. Для сборки нужны Mac на Apple Silicon, Xcode с компилятором Metal, CMake и стабильный Rust с поддержкой edition 2024.
+Voai currently builds from source. You'll need an Apple Silicon Mac, Xcode with the Metal toolchain, CMake and a stable Rust toolchain that supports the 2024 edition.
 
 ```sh
 git clone https://github.com/mozomig/Voai.git
@@ -27,6 +27,6 @@ cd Voai
 open target/dist/release/Voai.app
 ```
 
-При первом запуске откройте **Диктовка**, разрешите доступ к микрофону и универсальный доступ, затем выберите речевую модель. Первую фразу удобно надиктовать в пробное поле прямо в настройках.
+Open **Dictation**, grant microphone and Accessibility access, and choose a speech model. Try a phrase in the test field before switching to your editor. Voai follows your Mac's preferred language and lets you select English or Russian in settings. You can choose the language you dictate in separately.
 
-[Настройка и модели](docs/usage.md) · [Сборка и выпуск](docs/development.md) · [Архитектура](ARCHITECTURE.md) · [Релизы](https://github.com/mozomig/Voai/releases)
+[User guide](docs/usage.md) · [Build and release](docs/development.md) · [Architecture](ARCHITECTURE.md) · [Releases](https://github.com/mozomig/Voai/releases)

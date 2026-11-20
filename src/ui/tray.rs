@@ -4,6 +4,7 @@ use tray_icon::{
     Icon, TrayIcon, TrayIconBuilder,
     menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
 };
+use voai_l10n::{tf, tr};
 
 pub(super) enum MenuCommand {
     Settings,
@@ -27,10 +28,10 @@ impl StatusItem {
     pub(super) fn new() -> gpui::Result<Self> {
         let status = MenuItem::new("Voai", false, None);
         let shortcut = MenuItem::new("", false, None);
-        let settings = MenuItem::new("Настройки…", true, None);
-        let history = MenuItem::new("История диктовки", true, None);
-        let check = MenuItem::new("Проверить обновления…", true, None);
-        let quit = MenuItem::new("Выйти из Voai", true, None);
+        let settings = MenuItem::new(tr("ui.menu.settings"), true, None);
+        let history = MenuItem::new(tr("ui.menu.history"), true, None);
+        let check = MenuItem::new(tr("ui.menu.update"), true, None);
+        let quit = MenuItem::new(tr("ui.menu.quit"), true, None);
         let menu = Menu::with_items(&[
             &status,
             &shortcut,
@@ -71,16 +72,23 @@ impl StatusItem {
         })
     }
 
+    pub(super) fn refresh_language(&self) {
+        self.settings.set_text(tr("ui.menu.settings"));
+        self.history.set_text(tr("ui.menu.history"));
+        self.check.set_text(tr("ui.menu.update"));
+        self.quit.set_text(tr("ui.menu.quit"));
+    }
+
     pub(super) fn update(&mut self, s: &Snapshot) {
         let title = if s.phase == Phase::Idle {
             if !s.access_allowed || !s.mic_allowed {
-                "Нужны разрешения"
+                tr("ui.menu.permissions")
             } else if !s
                 .models
                 .iter()
                 .any(|m| !m.text_model && matches!(m.state, ModelState::Selected))
             {
-                "Выберите речевую модель"
+                tr("ui.menu.choose_speech")
             } else {
                 phase_title(s.phase)
             }
@@ -89,7 +97,7 @@ impl StatusItem {
         };
         let labels = [
             title.to_owned(),
-            format!("Диктовка · {}", shortcut_label(&s.shortcut)),
+            tf!("ui.menu.shortcut", shortcut = shortcut_label(&s.shortcut)),
         ];
         if self.last_labels != labels {
             self.status.set_text(&labels[0]);

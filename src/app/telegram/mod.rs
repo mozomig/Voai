@@ -21,6 +21,7 @@ use std::{
     },
     thread,
 };
+use voai_l10n::{tf, tr};
 use zeroize::Zeroizing;
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -32,9 +33,42 @@ pub struct TelegramView {
     pub pairing_url: Option<String>,
     pub owner: Option<i64>,
     pub awaiting_confirmation: bool,
-    pub status: String,
+    pub(crate) status: TelegramStatus,
     pub proxy_port: Option<NonZeroU16>,
     pub route_ready: bool,
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+pub(crate) enum TelegramStatus {
+    #[default]
+    Idle,
+    Label(&'static str),
+    Retrying(api::Error, u64),
+    Unconfirmed {
+        part: usize,
+        total: usize,
+    },
+    Detail(String),
+}
+
+impl std::fmt::Display for TelegramStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Idle => Ok(()),
+            Self::Label(key) => f.write_str(tr(key)),
+            Self::Retrying(error, seconds) => f.write_str(&tf!(
+                "app.telegram.retry_delay",
+                error = error,
+                seconds = seconds
+            )),
+            Self::Unconfirmed { part, total } => f.write_str(&tf!(
+                "app.telegram.confirm_part",
+                part = part,
+                total = total
+            )),
+            Self::Detail(message) => f.write_str(message),
+        }
+    }
 }
 
 pub enum TelegramCommand {
@@ -54,7 +88,7 @@ enum Event {
         owner: Option<i64>,
         link: Option<String>,
     },
-    Status(String),
+    Status(TelegramStatus),
     Paired(i64),
     Unconfirmed {
         part: usize,
@@ -85,9 +119,11 @@ impl Signals {
     }
     fn event(&self, event: Event) -> Result<(), String> {
         if !self.active() {
-            return Err("Остановлено.".into());
+            return Err(tr("app.telegram.stopped").into());
         }
-        self.tx.send(event).map_err(|_| "Остановлено.")?;
+        self.tx
+            .send(event)
+            .map_err(|_| tr("app.telegram.stopped"))?;
         let _ = self.wake.try_send(());
         Ok(())
     }
@@ -97,10 +133,10 @@ impl Signals {
     ) -> Result<T, String> {
         let (tx, rx) = mpsc::channel();
         self.event(make(tx))?;
-        rx.recv().map_err(|_| "Остановлено.")?
+        rx.recv().map_err(|_| tr("app.telegram.stopped"))?
     }
-    fn status(&self, text: impl Into<String>) -> Result<(), String> {
-        self.event(Event::Status(text.into()))
+    fn status(&self, key: &'static str) -> Result<(), String> {
+        self.event(Event::Status(TelegramStatus::Label(key)))
     }
 }
 
@@ -140,7 +176,7 @@ impl Telegram {
         match this.path.try_exists() {
             Ok(true) => this.start(Operation::Restore),
             Ok(false) => {}
-            Err(_) => this.view.status = "Не удалось открыть настройки Telegram.".into(),
+            Err(_) => this.view.status = TelegramStatus::Label("app.telegram.open_settings"),
         }
         this
     }
@@ -173,7 +209,7 @@ impl Telegram {
         if let Some(tx) = self.decision.take() {
             let _ = tx.send(Ok(choice));
             self.view.awaiting_confirmation = false;
-            self.view.status = "Бот на связи.".into();
+            self.view.status = TelegramStatus::Label("app.telegram.connected");
         }
     }
 
@@ -193,11 +229,10 @@ impl Telegram {
             enabled: true,
             running: true,
             status: if self.disconnecting {
-                "Отключаю бота…"
+                TelegramStatus::Label("app.telegram.disconnecting")
             } else {
-                "Подключение к Telegram…"
-            }
-            .into(),
+                TelegramStatus::Label("app.telegram.connecting")
+            },
             ..Default::default()
         };
         let path = self.path.clone();
@@ -263,9 +298,7 @@ impl Telegram {
                     total,
                     decision,
                 } => {
-                    self.view.status = format!(
-                        "Telegram не подтвердил доставку. Проверьте в чате часть {part} из {total}."
-                    );
+                    self.view.status = TelegramStatus::Unconfirmed { part, total };
                     self.view.awaiting_confirmation = true;
                     self.decision = Some(decision);
                 }
@@ -277,7 +310,7 @@ impl Telegram {
                     self.view.processing = false;
                     self.view.running = false;
                     self.view.pairing_url = None;
-                    self.view.status = result.err().unwrap_or_default();
+                    self.view.status = result.err().map(TelegramStatus::Detail).unwrap_or_default();
                 }
             }
         }
@@ -304,7 +337,7 @@ fn run_bot(
             (state, token)
         }
         Operation::Restore | Operation::SetRoute(_) => {
-            let mut state = State::load(path)?.ok_or("Подключите бота заново.")?;
+            let mut state = State::load(path)?.ok_or(tr("app.telegram.reconnect"))?;
             if let Operation::SetRoute(port) = op {
                 state.proxy_port = port;
                 state.save(path)?;
@@ -333,7 +366,7 @@ fn forget_connection(path: &Path) -> Result<(), String> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err("Не удалось удалить настройки Telegram.".into()),
+        Err(_) => Err(tr("app.telegram.remove_settings").into()),
     }
 }
 

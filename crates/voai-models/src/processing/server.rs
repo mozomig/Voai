@@ -9,24 +9,24 @@ use serde_json::{Value, json};
 use std::{sync::atomic::AtomicBool, time::Duration};
 use ureq::http::Response;
 use url::{Host, Url};
+use voai_l10n::{tf, tr};
 
 pub fn normalize_server_url(input: &str) -> Result<String> {
-    let mut url = Url::parse(input.trim())
-        .context("Введите адрес сервера, например http://127.0.0.1:1234/v1")?;
+    let mut url = Url::parse(input.trim()).context(tr("server.address"))?;
     ensure!(
         matches!(url.scheme(), "http" | "https")
             && url.username().is_empty()
             && url.password().is_none()
             && url.query().is_none()
             && url.fragment().is_none(),
-        "Нужен адрес HTTP(S) без пароля, параметров или фрагмента"
+        tr("server.url")
     );
     match url.host() {
         // Use an IP literal so the local connection does not rely on DNS.
         Some(Host::Domain("localhost")) => url.set_host(Some("127.0.0.1"))?,
         Some(Host::Ipv4(ip)) if ip.is_loopback() => (),
         Some(Host::Ipv6(ip)) if ip.is_loopback() => (),
-        _ => bail!("Локальный сервер должен работать на localhost, 127.0.0.1 или [::1]"),
+        _ => bail!(tr("server.loopback")),
     }
     if url.path() == "/" {
         url.set_path("/v1");
@@ -76,7 +76,7 @@ impl Server {
 
     fn authorize<B>(&self, request: ureq::RequestBuilder<B>) -> Result<ureq::RequestBuilder<B>> {
         if let Some(token) = &self.token {
-            let token = std::str::from_utf8(token).context("Некорректный токен в Связке ключей")?;
+            let token = std::str::from_utf8(token).context(tr("server.key"))?;
             Ok(request.header("Authorization", format!("Bearer {token}")))
         } else {
             Ok(request)
@@ -128,23 +128,22 @@ fn read_json<T: serde::de::DeserializeOwned>(
 ) -> Result<T> {
     let mut response = result.map_err(|err| match err {
         ureq::Error::StatusCode(401 | 403) => {
-            anyhow::anyhow!("Сервер отказал в доступе. Проверьте токен.")
+            anyhow::anyhow!(tr("server.unauthorized"))
         }
-        ureq::Error::StatusCode(status) => anyhow::anyhow!("Локальный сервер вернул HTTP {status}"),
-        ureq::Error::Timeout(_) => anyhow::anyhow!("Локальный сервер не ответил вовремя"),
-        _ => anyhow::anyhow!("Сервер не отвечает. Убедитесь, что он запущен, и проверьте адрес."),
+        ureq::Error::StatusCode(status) => anyhow::anyhow!(tf!("server.http", status = status)),
+        ureq::Error::Timeout(_) => anyhow::anyhow!(tr("server.timeout")),
+        _ => anyhow::anyhow!(tr("server.unavailable")),
     })?;
     ensure!(
         response.status().is_success(),
-        "Локальный сервер вернул HTTP {}",
-        response.status().as_u16()
+        tf!("server.http", status = response.status().as_u16())
     );
     response
         .body_mut()
         .with_config()
         .limit(2 * 1024 * 1024)
         .read_json()
-        .map_err(|_| anyhow::anyhow!("Нужен сервер с OpenAI-совместимым API. Проверьте путь /v1."))
+        .map_err(|_| anyhow::anyhow!(tr("server.protocol")))
 }
 
 pub fn server_models(endpoint: &str) -> Result<Vec<String>> {
@@ -160,7 +159,7 @@ pub fn process_server(
 ) -> Result<String> {
     validate_input(text)?;
     validate_processing_prompt(prompt)?;
-    ensure!(valid_model(model), "Выберите модель локального сервера");
+    ensure!(valid_model(model), tr("server.no.model"));
     check_cancelled(cancel)?;
     let server = Server::connect(endpoint, Duration::from_secs(120))?;
     check_cancelled(cancel)?;

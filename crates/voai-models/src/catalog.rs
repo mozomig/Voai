@@ -9,7 +9,7 @@ pub enum ModelKind {
 pub struct ModelSpec {
     pub id: &'static str,
     pub name: &'static str,
-    pub description: &'static str,
+    description_key: &'static str,
     pub kind: ModelKind,
     pub license: &'static str,
     pub file: ModelFile,
@@ -24,6 +24,12 @@ pub struct ModelFile {
     pub filename: &'static str,
 }
 
+impl ModelSpec {
+    pub fn description(&self) -> &'static str {
+        voai_l10n::tr(self.description_key)
+    }
+}
+
 impl std::ops::Deref for ModelSpec {
     type Target = ModelFile;
 
@@ -36,7 +42,7 @@ pub const CATALOG: &[ModelSpec] = &[
     ModelSpec {
         id: "small",
         name: "Whisper Small",
-        description: "Быстрое распознавание на каждый день",
+        description_key: "catalog.small",
         kind: ModelKind::Speech,
         license: "https://github.com/openai/whisper/blob/main/LICENSE",
         file: ModelFile {
@@ -49,7 +55,7 @@ pub const CATALOG: &[ModelSpec] = &[
     ModelSpec {
         id: "medium",
         name: "Whisper Medium",
-        description: "Повышенная точность распознавания",
+        description_key: "catalog.medium",
         kind: ModelKind::Speech,
         license: "https://github.com/openai/whisper/blob/main/LICENSE",
         file: ModelFile {
@@ -62,7 +68,7 @@ pub const CATALOG: &[ModelSpec] = &[
     ModelSpec {
         id: "large",
         name: "Whisper Large v3 Turbo",
-        description: "Высокая точность для сложной речи",
+        description_key: "catalog.large",
         kind: ModelKind::Speech,
         license: "https://github.com/openai/whisper/blob/main/LICENSE",
         file: ModelFile {
@@ -75,7 +81,7 @@ pub const CATALOG: &[ModelSpec] = &[
     ModelSpec {
         id: "qwen",
         name: "Qwen2.5 1.5B",
-        description: "Лёгкая модель для правки фраз",
+        description_key: "catalog.qwen",
         kind: ModelKind::Text,
         license: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/blob/main/LICENSE",
         file: ModelFile {
@@ -88,7 +94,7 @@ pub const CATALOG: &[ModelSpec] = &[
     ModelSpec {
         id: "gemma",
         name: "Gemma 2 2B",
-        description: "Редактирование длинного текста",
+        description_key: "catalog.gemma",
         kind: ModelKind::Text,
         license: "https://ai.google.dev/gemma/terms",
         file: ModelFile {

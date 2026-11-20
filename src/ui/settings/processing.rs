@@ -1,4 +1,5 @@
 use super::*;
+use voai_l10n::tr;
 
 impl Settings {
     pub(super) fn save_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -52,9 +53,7 @@ impl Settings {
             .map(|&mode| (mode_title(mode), mode == s.mode))
             .collect();
         let panel = match s.mode {
-            Mode::Off => {
-                col().child(text("Текст появится у курсора без правок.", 13., p.muted).mt_3())
-            }
+            Mode::Off => col().child(text(tr("ui.edit.off_hint"), 13., p.muted).mt_3()),
             Mode::Local => self.local_processor(p, cx),
             Mode::Server => self.server_processor(p, cx),
             Mode::Cloud => self.cloud_processor(p, cx),
@@ -90,13 +89,13 @@ impl Settings {
             .when(!choices.is_empty(), |v| {
                 v.child(Self::setting(
                     p,
-                    "Текстовая модель",
+                    tr("ui.edit.text_model"),
                     "",
                     self.picker(
                         "local-model",
                         selected
                             .map(|m| m.name.clone())
-                            .unwrap_or_else(|| "Выбрать".into()),
+                            .unwrap_or_else(|| tr("ui.action.select").into()),
                         choices,
                         selected.map(|m| m.id.clone()).unwrap_or_default(),
                         Command::SelectModel,
@@ -105,7 +104,7 @@ impl Settings {
                 ))
             })
             .child(row().mt_2().gap_2().child(
-                button("text-models", "Открыть каталог", p).on_click(cx.listener(
+                button("text-models", tr("ui.model.catalogue_open"), p).on_click(cx.listener(
                     |this, _, window, cx| {
                         this.model_tab = ModelTab::Text;
                         this.navigate(Page::Models, window, cx);
@@ -129,7 +128,7 @@ impl Settings {
             .mt_2()
             .child(Self::setting(
                 p,
-                "Провайдер",
+                tr("ui.edit.provider"),
                 "",
                 self.picker(
                     "provider",
@@ -144,7 +143,7 @@ impl Settings {
             ))
             .child(Self::setting(
                 p,
-                "Модель",
+                tr("ui.edit.model"),
                 "",
                 self.picker(
                     "cloud-model",
@@ -160,14 +159,7 @@ impl Settings {
                 ),
             ))
             .child(self.secret_row(false, p, cx))
-            .child(
-                text(
-                    "Сервис получит текст и инструкцию. Запись останется на Mac.",
-                    12.,
-                    p.muted,
-                )
-                .mt_2(),
-            )
+            .child(text(tr("ui.edit.cloud_privacy"), 12., p.muted).mt_2())
     }
 
     fn secret_row(&self, server: bool, p: Palette, cx: &Context<Self>) -> Div {
@@ -177,9 +169,9 @@ impl Settings {
             self.snapshot.has_key
         };
         let label = if server {
-            "Токен сервера"
+            tr("ui.edit.server_token")
         } else {
-            "API-ключ"
+            tr("ui.edit.api_key")
         };
         let command = if server {
             Command::SaveServerKey
@@ -190,21 +182,17 @@ impl Settings {
         Self::setting(
             p,
             label,
-            if has_key {
-                "Сохранён в связке ключей"
-            } else {
-                ""
-            },
+            if has_key { tr("ui.edit.key_saved") } else { "" },
             row()
                 .gap_1()
                 .child(div().w(px(125.)).child(Input::new(&self.key).small()))
                 .child(
-                    button("save-key", "Сохранить", p)
+                    button("save-key", tr("ui.action.save"), p)
                         .disabled(blank)
                         .on_click(cx.listener(|this, _, window, cx| this.save_key(window, cx))),
                 )
                 .when(has_key, |r| {
-                    r.child(button("delete-key", "Удалить", p).on_click(
+                    r.child(button("delete-key", tr("ui.action.delete"), p).on_click(
                         cx.listener(move |this, _, _, _| this.send(command(String::new()))),
                     ))
                 }),
@@ -219,7 +207,7 @@ impl Settings {
         let mut panel = col()
             .mt_3()
             .gap_2()
-            .child(label("Адрес сервера", p.ink))
+            .child(label(tr("ui.edit.server_address"), p.ink))
             .child(
                 row()
                     .gap_2()
@@ -233,9 +221,9 @@ impl Settings {
                         button(
                             "discover",
                             if s.server_loading {
-                                "Подключаюсь…"
+                                tr("ui.edit.connecting")
                             } else {
-                                "Найти модели"
+                                tr("ui.edit.find_models")
                             },
                             p,
                         )
@@ -276,9 +264,9 @@ impl Settings {
                             .ghost()
                             .small()
                             .label(if self.show_server_key {
-                                "Скрыть токен"
+                                tr("ui.edit.hide_token")
                             } else {
-                                "Токен…"
+                                tr("ui.edit.token")
                             })
                             .text_color(p.muted)
                             .disabled(!saved)
@@ -297,16 +285,21 @@ impl Settings {
         }
         if saved && (!s.server_models.is_empty() || !s.server_model.is_empty()) {
             let title = if s.server_model.is_empty() {
-                "Выбрать".into()
+                tr("ui.action.select").into()
             } else {
                 s.server_model.clone()
             };
             if s.server_models.is_empty() {
-                panel = panel.child(Self::setting(p, "Модель", "", text(title, 12., p.ink)));
+                panel = panel.child(Self::setting(
+                    p,
+                    tr("ui.edit.model"),
+                    "",
+                    text(title, 12., p.ink),
+                ));
             } else {
                 panel = panel.child(Self::setting(
                     p,
-                    "Модель",
+                    tr("ui.edit.model"),
                     "",
                     self.picker(
                         "server-model",
@@ -330,8 +323,8 @@ impl Settings {
         let changed = draft.as_str() != self.snapshot.processing_prompt;
         let error = voai_models::validate_processing_prompt(&draft).err();
         let can_save = changed && error.is_none();
-        let restoring = draft.as_str() != voai_models::DEFAULT_PROCESSING_PROMPT
-            || self.snapshot.processing_prompt != voai_models::DEFAULT_PROCESSING_PROMPT;
+        let restoring = draft.as_str() != voai_models::default_processing_prompt()
+            || self.snapshot.processing_prompt != voai_models::default_processing_prompt();
         col()
             .mt(px(19.))
             .gap_2()
@@ -339,8 +332,10 @@ impl Settings {
                 row()
                     .justify_between()
                     .gap_2()
-                    .child(label("Инструкция для модели", p.ink))
-                    .when(changed, |r| r.child(text("Не сохранено", 12., p.muted))),
+                    .child(label(tr("ui.edit.instructions"), p.ink))
+                    .when(changed, |r| {
+                        r.child(text(tr("ui.edit.unsaved"), 12., p.muted))
+                    }),
             )
             .child(Input::new(&self.prompt).h(px(110.)).w_full())
             .children(error.map(|e| text(e.to_string(), 12., p.error)))
@@ -352,14 +347,14 @@ impl Settings {
                         Button::new("reset-prompt")
                             .ghost()
                             .small()
-                            .label("Вернуть исходную")
+                            .label(tr("ui.edit.restore"))
                             .text_color(p.muted)
                             .disabled(!restoring)
                             .when(!restoring, |b| b.opacity(0.55))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.send(Command::ResetProcessingPrompt);
                                 let persisted = this.engine.borrow().snapshot().processing_prompt;
-                                if persisted == voai_models::DEFAULT_PROCESSING_PROMPT {
+                                if persisted == voai_models::default_processing_prompt() {
                                     this.prompt.update(cx, |input, cx| {
                                         input.set_value(persisted, window, cx)
                                     });
@@ -370,13 +365,13 @@ impl Settings {
                         primary_button(
                             "save-prompt",
                             if changed {
-                                "Сохранить"
+                                tr("ui.action.save")
                             } else {
-                                "Сохранено"
+                                tr("ui.edit.saved")
                             },
                             p,
                         )
-                        .tooltip("Сохранить инструкцию (⌘S)")
+                        .tooltip(tr("ui.edit.save_tip"))
                         .disabled(!can_save)
                         .when(!can_save, |b| b.opacity(0.55))
                         .on_click(cx.listener(|this, _, _, cx| this.save_prompt(cx))),

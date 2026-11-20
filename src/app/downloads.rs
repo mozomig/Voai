@@ -9,6 +9,7 @@ use std::{
     },
     thread,
 };
+use voai_l10n::tr;
 use voai_models::{CATALOG, ModelKind, ModelSpec, ModelStore};
 
 struct Job {
@@ -85,7 +86,7 @@ impl Downloads {
                     error.1 = bytes;
                 } else if bytes > 0 {
                     self.errors
-                        .insert(model.id, ("Загрузка прервана.".into(), bytes));
+                        .insert(model.id, (tr("app.downloads.interrupted").into(), bytes));
                 }
             }
         }
@@ -102,7 +103,9 @@ impl Downloads {
             let result = match job.done.try_recv() {
                 Ok(result) => result,
                 Err(mpsc::TryRecvError::Empty) => return true,
-                Err(mpsc::TryRecvError::Disconnected) => Err("Загрузка прервалась".into()),
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    Err(tr("app.downloads.interrupted").into())
+                }
             };
             match result {
                 Ok(()) => self.installed.push(id),
@@ -134,17 +137,14 @@ impl Downloads {
                         ModelState::Installed
                     }
                 } else if selected {
-                    ModelState::Failed(
-                        "Файл модели недоступен. Верните его в папку моделей или скачайте заново."
-                            .into(),
-                    )
+                    ModelState::Failed(tr("app.models.file_missing").into())
                 } else {
                     ModelState::Available
                 };
                 ModelRow {
                     id: model.id.into(),
                     name: model.name.into(),
-                    description: model.description.into(),
+                    description: model.description().into(),
                     bytes: model.bytes,
                     local_path: None,
                     on_disk: match &state {

@@ -1,6 +1,6 @@
 use super::{
     FileDocument, FileLine, FileProgress, Update,
-    document::{SourceStamp, Turn, Word, align},
+    document::{Notice, SourceStamp, Turn, Word, align},
 };
 use serde::Deserialize;
 use std::{
@@ -16,6 +16,7 @@ use std::{
     thread,
     time::Duration,
 };
+use voai_l10n::{tf, tr};
 
 #[derive(Clone)]
 pub(super) struct Tools {
@@ -49,7 +50,7 @@ pub(super) struct Work {
 impl Work {
     pub(super) fn check(&self) -> Result<(), String> {
         if self.cancelled.load(Ordering::Acquire) {
-            Err("Импорт отменён.".into())
+            Err(tr("app.files.import_cancelled").into())
         } else {
             Ok(())
         }
@@ -60,9 +61,9 @@ impl Work {
             let _ = wake.try_send(());
         }
     }
-    pub(super) fn progress(&self, stage: &str, percent: u8) {
+    pub(super) fn progress(&self, stage_key: &'static str, percent: u8) {
         self.notify(Update::Progress(FileProgress {
-            stage: stage.to_owned(),
+            stage_key,
             percent,
             cancellable: true,
         }));
@@ -106,14 +107,15 @@ impl Drop for ChildGuard {
 fn run(
     command: &mut Command,
     work: &Work,
-    stage: &str,
+    stage_key: &'static str,
     error: &str,
     mut accept: impl FnMut(Reply) -> Result<(), String>,
 ) -> Result<(), String> {
     work.check()?;
-    work.progress(stage, 0);
+    work.progress(stage_key, 0);
     let mut child = ChildGuard(
         command
+            .env(voai_l10n::WORKER_LANGUAGE_ENV, voai_l10n::language())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
@@ -145,7 +147,7 @@ fn run(
             Ok(Ok(Reply::Progress { progress })) => {
                 let percent = progress.min(100);
                 if percent > last {
-                    work.progress(stage, percent);
+                    work.progress(stage_key, percent);
                     last = percent;
                 }
             }
@@ -176,9 +178,9 @@ pub(super) fn import(
 ) -> Result<FileDocument, String> {
     let source = source
         .canonicalize()
-        .map_err(|_| "Не удалось открыть исходный файл.")?;
+        .map_err(|_| tr("app.files.open_source"))?;
     let stamp = SourceStamp::read(&source)?;
-    let temp = tempfile::tempdir().map_err(|_| "Не удалось подготовить временную папку.")?;
+    let temp = tempfile::tempdir().map_err(|_| tr("app.files.temp_dir"))?;
     let pcm = temp.path().join("audio.pcm");
     run(
         Command::new(&tools.media)
@@ -187,19 +189,19 @@ pub(super) fn import(
             .arg(&pcm)
             .stdin(Stdio::null()),
         work,
-        "Чтение аудио",
-        "Не удалось прочитать аудиодорожку. Проверьте формат файла и наличие звука.",
-        |_| Err("Ошибка декодирования.".into()),
+        "app.files.reading",
+        tr("app.files.audio_track"),
+        |_| Err(tr("app.files.decode_failed").into()),
     )?;
     if SourceStamp::read(&source)? != stamp {
-        return Err("Исходный файл изменился во время чтения.".into());
+        return Err(tr("app.files.source_changed").into());
     }
     let bytes = pcm
         .metadata()
-        .map_err(|_| "Не удалось прочитать звук.")?
+        .map_err(|_| tr("app.files.read_audio"))?
         .len();
     if bytes == 0 || bytes % 2 != 0 {
-        return Err("Файл не содержит звука.".into());
+        return Err(tr("app.files.no_audio").into());
     }
     let duration_ms = bytes.div_ceil(32);
     let mut words = vec![];
@@ -211,11 +213,11 @@ pub(super) fn import(
             .arg(&pcm)
             .stdin(Stdio::null()),
         work,
-        "Распознавание речи",
-        "Не удалось распознать файл. Проверьте речевую модель и свободную память.",
+        "app.files.recognizing",
+        tr("app.files.recognition_failed"),
         |reply| {
             let Reply::Words { words: chunk } = reply else {
-                return Err("Ошибка речевого процесса.".into());
+                return Err(tr("app.files.recognizer_failed").into());
             };
             words.extend(chunk.into_iter().map(|mut w| {
                 w.end_ms = w.end_ms.min(duration_ms);
@@ -226,8 +228,9 @@ pub(super) fn import(
     )?;
     let mut turns = vec![];
     let mut received = false;
-    let mut warning = if words.is_empty() {
-        Some("Речь в файле не обнаружена.".into())
+    let mut notices = Vec::new();
+    if words.is_empty() {
+        notices.push(Notice::NoSpeech);
     } else if let Some(voices) = &pipeline.voices {
         let result = run(
             Command::new(&tools.diarize)
@@ -235,11 +238,11 @@ pub(super) fn import(
                 .arg(voices)
                 .stdin(Stdio::null()),
             work,
-            "Определение спикеров",
-            "Не удалось определить спикеров.",
+            "app.files.identifying_speakers",
+            tr("app.speakers.identification_failed"),
             |reply| {
                 let Reply::Turns { turns: chunk } = reply else {
-                    return Err("Ошибка определения спикеров.".into());
+                    return Err(tr("app.speakers.invalid_result").into());
                 };
                 received = true;
                 turns.extend(chunk);
@@ -249,13 +252,9 @@ pub(super) fn import(
         work.check()?;
         if result.is_err() || !received || turns.is_empty() {
             turns.clear();
-            Some("Не удалось определить спикеров. Текст и таймкоды сохранены.".to_owned())
-        } else {
-            None
+            notices.push(Notice::SpeakersUnavailable);
         }
-    } else {
-        None
-    };
+    }
     let mut lines = align(words, turns);
     // Use chronological labels regardless of the clustering backend's internal numbering.
     let mut ids = BTreeMap::new();
@@ -267,7 +266,7 @@ pub(super) fn import(
             *id = *ids.entry(*id).or_insert(next);
             speakers
                 .entry(*id)
-                .or_insert_with(|| format!("Спикер {id}"));
+                .or_insert_with(|| tf!("app.speakers.default_name", id = id));
         }
     }
     work.check()?;
@@ -276,14 +275,7 @@ pub(super) fn import(
         && edit_lines(&tools.text, editor, &pipeline.prompt, &mut lines, work).is_err()
     {
         work.check()?;
-        let message = "Обработка прервалась. У оставшихся реплик сохранён исходный текст.";
-        match &mut warning {
-            Some(previous) => {
-                previous.push(' ');
-                previous.push_str(message);
-            }
-            None => warning = Some(message.into()),
-        }
+        notices.push(Notice::EditingInterrupted);
     }
     work.check()?;
     Ok(FileDocument {
@@ -296,7 +288,8 @@ pub(super) fn import(
         source,
         speakers,
         lines,
-        warning,
+        notices,
+        legacy_warning: None,
         source_stamp: stamp,
     })
 }
@@ -308,8 +301,8 @@ fn edit_lines(
     lines: &mut [FileLine],
     work: &Work,
 ) -> Result<(), String> {
-    const STAGE: &str = "Обработка текста";
-    let error = "Не удалось обработать текст.";
+    let stage_key = "app.files.editing";
+    let error = tr("app.files.edit_failed");
     let mut input = tempfile::tempfile().map_err(|_| error)?;
     fn write_field(w: &mut impl Write, s: &str) -> std::io::Result<()> {
         w.write_all(
@@ -333,7 +326,7 @@ fn edit_lines(
             .arg(model)
             .stdin(input),
         work,
-        STAGE,
+        stage_key,
         error,
         |r| {
             let Reply::Edited { edited } = r else {
@@ -347,7 +340,7 @@ fn edit_lines(
                 row.original = Some(std::mem::replace(&mut row.text, edited.text));
             }
             next += 1;
-            work.progress(STAGE, (next * 100 / lines.len()) as u8);
+            work.progress(stage_key, (next * 100 / lines.len()) as u8);
             Ok(())
         },
     )?;

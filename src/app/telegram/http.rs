@@ -130,13 +130,11 @@ fn network_error(code: i32) -> Error {
         2 => Error::InvalidResponse,
         -999 => Error::Cancelled,
         -1001 => Error::Timeout,
-        -1003 | -1006 => Error::Connection("Не удалось найти api.telegram.org через DNS."),
-        -1004 => Error::Connection("Не удалось открыть соединение с api.telegram.org."),
-        -1005 => Error::Connection("Соединение с Telegram оборвалось."),
-        -1009 => Error::Connection("Нет подключения к сети."),
-        -1206..=-1200 => {
-            Error::Connection("Не удалось установить защищённое соединение с Telegram.")
-        }
+        -1003 | -1006 => Error::Connection("app.telegram.dns"),
+        -1004 => Error::Connection("app.telegram.connect_failed"),
+        -1005 => Error::Connection("app.telegram.disconnected"),
+        -1009 => Error::Connection("app.telegram.offline"),
+        -1206..=-1200 => Error::Connection("app.telegram.tls"),
         _ => Error::Network,
     }
 }

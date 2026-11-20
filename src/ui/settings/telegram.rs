@@ -1,5 +1,6 @@
 use super::*;
 use crate::app::TelegramCommand;
+use voai_l10n::{tf, tr};
 
 impl Settings {
     pub(super) fn new_telegram_token(
@@ -9,7 +10,7 @@ impl Settings {
         let token = cx.new(|cx| {
             InputState::new(window, cx)
                 .masked(true)
-                .placeholder("Вставьте токен")
+                .placeholder(tr("ui.telegram.paste_token"))
         });
         cx.subscribe_in(&token, window, |this, _, event, window, cx| match event {
             InputEvent::PressEnter { .. } => this.connect_telegram(window, cx),
@@ -54,9 +55,9 @@ impl Settings {
     fn telegram_network(&self, p: Palette, cx: &Context<Self>) -> Div {
         let bot = &self.snapshot.telegram;
         let title = match (self.telegram_network_open, bot.proxy_port) {
-            (true, _) => "Скрыть настройки сети".to_owned(),
-            (false, Some(port)) => format!("Локальный прокси · 127.0.0.1:{port}"),
-            (false, None) => "Настройки сети…".to_owned(),
+            (true, _) => tr("ui.telegram.hide_network").to_owned(),
+            (false, Some(port)) => tf!("ui.telegram.proxy_port", port = port),
+            (false, None) => tr("ui.telegram.network").to_owned(),
         };
         let mut section = col().child(
             row().child(
@@ -92,11 +93,7 @@ impl Settings {
             section = section.child(
                 col()
                     .gap_2()
-                    .child(text(
-                        "По умолчанию Voai использует сеть macOS и активный VPN. Для локального SOCKS5 укажите порт на 127.0.0.1.",
-                        12.,
-                        p.muted,
-                    ))
+                    .child(text(tr("ui.telegram.network_detail"), 12., p.muted))
                     .child(
                         row()
                             .gap_2()
@@ -106,22 +103,25 @@ impl Settings {
                                     .child(Input::new(&self.telegram_port).small()),
                             )
                             .child(
-                                primary_button("telegram-use-proxy", "Через прокси", p)
-                                    .disabled(!valid)
-                                    .on_click(
-                                        cx.listener(|this, _, _, cx| this.apply_telegram_proxy(cx)),
-                                    ),
+                                primary_button(
+                                    "telegram-use-proxy",
+                                    tr("ui.telegram.use_proxy"),
+                                    p,
+                                )
+                                .disabled(!valid)
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.apply_telegram_proxy(cx)),
+                                ),
                             )
                             .child(
-                                button("telegram-system-network", "Системная сеть", p).on_click(
-                                    cx.listener(|this, _, _, cx| {
+                                button("telegram-system-network", tr("ui.telegram.use_system"), p)
+                                    .on_click(cx.listener(|this, _, _, cx| {
                                         this.send(Command::Telegram(TelegramCommand::SetRoute(
                                             None,
                                         )));
                                         this.telegram_network_open = false;
                                         cx.notify();
-                                    }),
-                                ),
+                                    })),
                             ),
                     ),
             );
@@ -132,26 +132,18 @@ impl Settings {
     pub(super) fn telegram(&self, p: Palette, cx: &Context<Self>) -> Div {
         col()
             .gap_2()
-            .child(text(
-                "Перешлите боту голосовое, аудио или видео до 20 МБ. Voai расшифрует запись на Mac и пришлёт текст в тот же чат.",
-                13.,
-                p.muted,
-            ))
+            .child(text(tr("ui.telegram.intro"), 13., p.muted))
             .child(if self.snapshot.telegram.enabled {
                 self.telegram_connection(p, cx)
             } else {
                 self.telegram_setup(p, cx)
             })
-            .child(text(
-                "Бот на связи, пока Voai запущен и Mac подключён к интернету.",
-                12.,
-                p.muted,
-            ).mt_2())
+            .child(text(tr("ui.telegram.online_hint"), 12., p.muted).mt_2())
             .child(self.telegram_network(p, cx))
     }
 
     fn telegram_setup(&self, p: Palette, cx: &Context<Self>) -> Div {
-        let status = &self.snapshot.telegram.status;
+        let status = self.snapshot.telegram.status.to_string();
         col()
             .mt_2()
             .gap_2()
@@ -159,21 +151,17 @@ impl Settings {
                 row()
                     .justify_between()
                     .gap_2()
-                    .child(label("Токен бота", p.ink))
+                    .child(label(tr("ui.telegram.bot_token"), p.ink))
                     .child(
                         Button::new("telegram-botfather")
                             .ghost()
                             .small()
-                            .label("Открыть @BotFather")
+                            .label(tr("ui.telegram.open_botfather"))
                             .text_color(p.accent)
                             .on_click(|_, _, cx| cx.open_url("https://t.me/BotFather")),
                     ),
             )
-            .child(text(
-                "Создайте бота командой /newbot в @BotFather и вставьте полученный токен.",
-                12.,
-                p.muted,
-            ))
+            .child(text(tr("ui.telegram.create_bot"), 12., p.muted))
             .child(
                 row()
                     .gap_2()
@@ -184,7 +172,7 @@ impl Settings {
                             .child(Input::new(&self.telegram_token).small()),
                     )
                     .child(
-                        primary_button("telegram-connect", "Подключить", p)
+                        primary_button("telegram-connect", tr("ui.action.connect"), p)
                             .disabled(self.telegram_token.read(cx).value().trim().is_empty())
                             .on_click(
                                 cx.listener(|this, _, window, cx| {
@@ -193,27 +181,25 @@ impl Settings {
                             ),
                     ),
             )
-            .when(!status.is_empty(), |d| {
-                d.child(text(status.clone(), 12., p.error))
-            })
+            .when(!status.is_empty(), |d| d.child(text(status, 12., p.error)))
     }
 
     fn telegram_connection(&self, p: Palette, cx: &Context<Self>) -> Div {
         let bot = &self.snapshot.telegram;
-        let name = bot
-            .username
-            .as_ref()
-            .map_or_else(|| "Бот".to_owned(), |name| format!("@{name}"));
+        let name = bot.username.as_ref().map_or_else(
+            || tr("ui.telegram.bot").to_owned(),
+            |name| format!("@{name}"),
+        );
         let mut page = col().gap_2().child(Self::setting_row(
             p,
             &name,
             Some(text(
-                bot.status.clone(),
+                bot.status.to_string(),
                 12.,
                 if bot.running { p.muted } else { p.error },
             )),
-            button("telegram-disconnect", "Отключить", p)
-                .tooltip("Остановить бота и удалить его токен с этого Mac")
+            button("telegram-disconnect", tr("ui.action.disconnect"), p)
+                .tooltip(tr("ui.telegram.disconnect_hint"))
                 .on_click(cx.listener(|this, _, _, _| {
                     this.send(Command::Telegram(TelegramCommand::Disconnect))
                 })),
@@ -223,26 +209,27 @@ impl Settings {
                 row()
                     .gap_2()
                     .child(
-                        primary_button("telegram-confirm", "Уже в чате", p).on_click(cx.listener(
-                            |this, _, _, _| {
+                        primary_button("telegram-confirm", tr("ui.telegram.confirm_delivery"), p)
+                            .on_click(cx.listener(|this, _, _, _| {
                                 this.send(Command::Telegram(TelegramCommand::ConfirmDelivery))
-                            },
-                        )),
+                            })),
                     )
-                    .child(button("telegram-resend", "Отправить ещё раз", p).on_click(
-                        cx.listener(|this, _, _, _| {
-                            this.send(Command::Telegram(TelegramCommand::ResendPart))
-                        }),
-                    )),
+                    .child(
+                        button("telegram-resend", tr("ui.telegram.resend"), p).on_click(
+                            cx.listener(|this, _, _, _| {
+                                this.send(Command::Telegram(TelegramCommand::ResendPart))
+                            }),
+                        ),
+                    ),
             );
         } else if !bot.running {
             page = page.child(row().child(
-                primary_button("telegram-retry", "Повторить", p).on_click(cx.listener(
+                primary_button("telegram-retry", tr("ui.action.retry"), p).on_click(cx.listener(
                     |this, _, _, _| this.send(Command::Telegram(TelegramCommand::Retry)),
                 )),
             ));
         } else if bot.owner.is_none() && bot.pairing_url.is_some() {
-            let pair = primary_button("telegram-pair", "Привязать аккаунт", p).on_click(
+            let pair = primary_button("telegram-pair", tr("ui.telegram.link_account"), p).on_click(
                 cx.listener(|this, _, _, cx| {
                     if let Some(url) = &this.engine.borrow().snapshot().telegram.pairing_url {
                         cx.open_url(url);
@@ -250,7 +237,7 @@ impl Settings {
                 }),
             );
             page = page
-                .child(text("Откройте ссылку под своим аккаунтом Telegram и нажмите «Старт». Бот будет принимать записи только от этого аккаунта.", 13., p.ink))
+                .child(text(tr("ui.telegram.pair_help"), 13., p.ink))
                 .child(row().child(pair));
         }
         if let Some(owner) = bot.owner
@@ -259,17 +246,17 @@ impl Settings {
             let url = format!("https://t.me/{name}");
             page = page.child(Self::setting(
                 p,
-                "Разрешённый отправитель",
+                tr("ui.telegram.sender"),
                 &format!("Telegram ID {owner}"),
-                button("telegram-chat", "Открыть чат", p)
+                button("telegram-chat", tr("ui.telegram.open_chat"), p)
                     .on_click(move |_, _, cx| cx.open_url(&url)),
             ));
         }
         page.child(Self::setting(
             p,
-            "Модели",
-            "Речь и обработка текста из раздела «Расшифровка»",
-            button("telegram-models", "Настроить", p).on_click(cx.listener(
+            tr("ui.page.models"),
+            tr("ui.telegram.model_source"),
+            button("telegram-models", tr("ui.action.configure"), p).on_click(cx.listener(
                 |this, _, window, cx| {
                     this.files_ui.configure();
                     this.navigate(Page::Files, window, cx);

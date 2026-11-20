@@ -1,3 +1,4 @@
+use voai_l10n::tr;
 mod appearance;
 mod panel;
 mod settings;
@@ -35,6 +36,7 @@ struct Desktop {
     panel: Option<WindowHandle<Panel>>,
     tray: Option<StatusItem>,
     last: Option<Snapshot>,
+    language: &'static str,
 }
 
 impl Desktop {
@@ -68,7 +70,7 @@ impl Desktop {
             ))),
             window_min_size: Some(size(px(700.), px(448.))),
             titlebar: Some(TitlebarOptions {
-                title: Some("Настройки Voai".into()),
+                title: Some(tr("ui.settings.title").into()),
                 ..gpui_component::TitleBar::title_bar_options()
             }),
             ..Default::default()
@@ -95,7 +97,7 @@ impl Desktop {
                 self.settings = Some(window);
                 cx.activate(true);
             }
-            Err(error) => eprintln!("Не удалось открыть окно настроек: {error}"),
+            Err(error) => eprintln!("Could not open settings: {error}"),
         }
     }
 
@@ -169,7 +171,17 @@ impl Desktop {
                     .iter()
                     .any(|m| matches!(m.state, ModelState::Downloading { .. })),
         );
-        let changed = self.last.as_ref() != Some(&snapshot);
+        let language = voai_l10n::language();
+        let language_changed = self.language != language;
+        if language_changed {
+            self.language = language;
+            gpui_component::set_locale(language);
+            set_app_menu(cx);
+            if let Some(tray) = &self.tray {
+                tray.refresh_language();
+            }
+        }
+        let changed = language_changed || self.last.as_ref() != Some(&snapshot);
         if changed {
             if let Some(tray) = self.tray.as_mut() {
                 tray.update(&snapshot);
@@ -178,7 +190,12 @@ impl Desktop {
                 if let Ok(root) = handle.read(cx) {
                     if let Ok(settings) = root.view().clone().downcast::<Settings>() {
                         let _ = cx.update_window(*handle, |_, window, cx| {
-                            settings.update(cx, |view, cx| view.sync(snapshot.clone(), window, cx));
+                            settings.update(cx, |view, cx| {
+                                if language_changed {
+                                    view.refresh_language(window, cx);
+                                }
+                                view.sync(snapshot.clone(), window, cx);
+                            });
                         });
                     }
                 } else {
@@ -240,7 +257,7 @@ impl Desktop {
                 }) {
                     Ok(panel) => self.panel = Some(panel),
                     Err(error) => {
-                        eprintln!("Не удалось открыть панель: {error}");
+                        eprintln!("Could not open the dictation panel: {error}");
                         self.engine.borrow_mut().dispatch(Command::Cancel);
                     }
                 }
@@ -259,6 +276,21 @@ impl Desktop {
     }
 }
 
+fn set_app_menu(cx: &mut App) {
+    let mut items = vec![MenuItem::action(tr("ui.menu.settings"), OpenSettings)];
+    if updates::available() {
+        items.push(MenuItem::action(tr("ui.menu.update"), CheckUpdates));
+    }
+    items.extend([
+        MenuItem::separator(),
+        MenuItem::action(tr("ui.menu.quit"), Quit),
+    ]);
+    cx.set_menus(vec![Menu {
+        name: "Voai".into(),
+        items,
+    }]);
+}
+
 pub fn run(backend: Backend) {
     let desktop = Rc::new(RefCell::new(Desktop {
         engine: Rc::new(RefCell::new(backend)),
@@ -266,6 +298,7 @@ pub fn run(backend: Backend) {
         panel: None,
         tray: None,
         last: None,
+        language: voai_l10n::language(),
     }));
     let app = Application::new().with_assets(style::Artwork);
     let reopen = desktop.clone();
@@ -275,7 +308,7 @@ pub fn run(backend: Backend) {
         updates::start();
         gpui_component::init(cx);
         style::Palette::dark().apply(cx);
-        gpui_component::set_locale("ru");
+        gpui_component::set_locale(voai_l10n::language());
         let settings = desktop.clone();
         cx.on_action(move |_: &OpenSettings, cx| settings.borrow_mut().show_settings(cx));
         let permissions = desktop.clone();
@@ -309,21 +342,10 @@ pub fn run(backend: Backend) {
             KeyBinding::new("cmd-w", CloseSettings, None),
         ]);
         cx.on_action(|_: &CheckUpdates, _| updates::check());
-        let mut items = vec![MenuItem::action("Настройки…", OpenSettings)];
-        if updates::available() {
-            items.push(MenuItem::action("Проверить обновления…", CheckUpdates));
-        }
-        items.extend([
-            MenuItem::separator(),
-            MenuItem::action("Выйти из Voai", Quit),
-        ]);
-        cx.set_menus(vec![Menu {
-            name: "Voai".into(),
-            items,
-        }]);
+        set_app_menu(cx);
         match StatusItem::new() {
             Ok(tray) => desktop.borrow_mut().tray = Some(tray),
-            Err(error) => eprintln!("Не удалось создать меню Voai: {error}"),
+            Err(error) => eprintln!("Could not create the Voai menu: {error}"),
         }
         desktop.borrow_mut().show_settings(cx);
         let wake = desktop.borrow().engine.borrow().wake_signal();

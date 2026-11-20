@@ -1,3 +1,4 @@
+use voai_l10n::{tf, tr};
 mod gguf;
 mod whisper;
 use crate::ModelKind;
@@ -34,7 +35,7 @@ struct FileStamp {
 
 impl FileStamp {
     fn read(meta: &Metadata) -> Result<Self> {
-        ensure!(meta.is_file(), "Выберите обычный файл модели");
+        ensure!(meta.is_file(), tr("model.regular"));
         Ok(Self {
             device: meta.dev(),
             inode: meta.ino(),
@@ -54,18 +55,17 @@ impl ConnectedModel {
         max_bytes: u64,
         engine_check: impl FnOnce(&Path) -> Result<()>,
     ) -> Result<Self> {
-        let path = fs::canonicalize(path).context("Не удалось найти файл модели")?;
-        ensure!(path.to_str().is_some(), "Путь к модели должен быть в UTF-8");
+        let path = fs::canonicalize(path).context(tr("model.missing"))?;
+        ensure!(path.to_str().is_some(), tr("model.path"));
         let stamp = FileStamp::read(&fs::symlink_metadata(&path)?)?;
         ensure!(
             stamp.bytes <= max_bytes,
-            "Файл модели превышает допустимый размер для памяти этого Mac ({} ГБ)",
-            max_bytes / 1_000_000_000
+            tf!("model.ram.limit", limit = max_bytes / 1_000_000_000)
         );
-        let file = File::open(&path).context("Не удалось прочитать файл модели")?;
+        let file = File::open(&path).context(tr("model.unreadable"))?;
         ensure!(
             FileStamp::read(&file.metadata()?)? == stamp,
-            "Файл изменился во время подключения"
+            tr("model.changed.import")
         );
         check_container(&file, kind, stamp.bytes)?;
         engine_check(&path)?;
@@ -92,18 +92,13 @@ impl ConnectedModel {
 
     pub fn resolve(&self) -> Result<&Path> {
         let meta = fs::symlink_metadata(&self.path).map_err(|err| match err.kind() {
-            std::io::ErrorKind::NotFound => anyhow::anyhow!(
-                "Файл модели не найден. Подключите диск или выберите файл повторно."
-            ),
+            std::io::ErrorKind::NotFound => anyhow::anyhow!(tr("model.drive")),
             std::io::ErrorKind::PermissionDenied => {
-                anyhow::anyhow!("Нет доступа к файлу модели. Проверьте разрешения на чтение.")
+                anyhow::anyhow!(tr("model.access"))
             }
-            _ => anyhow::anyhow!("Файл модели недоступен. Проверьте диск и попробуйте снова."),
+            _ => anyhow::anyhow!(tr("model.unavailable")),
         })?;
-        ensure!(
-            FileStamp::read(&meta)? == self.stamp,
-            "Файл модели изменился. Подключите его повторно"
-        );
+        ensure!(FileStamp::read(&meta)? == self.stamp, tr("model.changed"));
         Ok(&self.path)
     }
 }
@@ -112,10 +107,7 @@ pub fn local_model_size_limit() -> Result<u64> {
     let output = Command::new("/usr/sbin/sysctl")
         .args(["-n", "hw.memsize"])
         .output()?;
-    ensure!(
-        output.status.success(),
-        "Не удалось определить объём памяти Mac"
-    );
+    ensure!(output.status.success(), tr("model.ram.unknown"));
     let ram: u64 = std::str::from_utf8(&output.stdout)?.trim().parse()?;
     // Leave unified memory for the OS, decoder context and Metal buffers.
     Ok(ram - ram / 4)
@@ -125,7 +117,7 @@ fn read_u32(reader: &mut impl Read) -> Result<u32> {
     let mut bytes = [0; 4];
     reader
         .read_exact(&mut bytes)
-        .context("Файл модели обрезан")?;
+        .context(tr("model.truncated"))?;
     Ok(u32::from_le_bytes(bytes))
 }
 
@@ -133,7 +125,7 @@ fn read_u64(reader: &mut impl Read) -> Result<u64> {
     let mut bytes = [0; 8];
     reader
         .read_exact(&mut bytes)
-        .context("Файл модели обрезан")?;
+        .context(tr("model.truncated"))?;
     Ok(u64::from_le_bytes(bytes))
 }
 
@@ -144,14 +136,14 @@ fn check_container(file: &File, kind: ModelKind, bytes: u64) -> Result<()> {
         ModelKind::Text => {
             ensure!(
                 magic == u32::from_le_bytes(*b"GGUF"),
-                "Для обработки текста выберите файл llama.cpp GGUF"
+                tr("model.gguf.expected")
             );
             gguf::check(&mut r, bytes)?;
         }
         ModelKind::Speech => {
             ensure!(
                 magic == u32::from_le_bytes(*b"lmgg"),
-                "Для распознавания выберите модель whisper.cpp в формате GGML"
+                tr("model.ggml.expected")
             );
             let mut dims = [0; 13];
             for value in &mut dims {
@@ -187,17 +179,14 @@ fn check_container(file: &File, kind: ModelKind, bytes: u64) -> Result<()> {
                     && mels == filter_mels
                     && (1..=256).contains(&mels)
                     && (1..=8192).contains(&fft),
-                "Некорректные параметры whisper.cpp"
+                tr("model.whisper.params")
             );
             r.seek_relative(i64::from(mels) * i64::from(fft) * 4)?;
             let words = read_u32(&mut r)?;
-            ensure!(
-                words > 0 && words <= vocab,
-                "Некорректный словарь whisper.cpp"
-            );
+            ensure!(words > 0 && words <= vocab, tr("model.whisper.vocab"));
             for _ in 0..words {
                 let len = read_u32(&mut r)?;
-                ensure!(len <= 65_536, "Повреждён словарь whisper.cpp");
+                ensure!(len <= 65_536, tr("model.whisper.vocab.corrupt"));
                 r.seek_relative(i64::from(len))?;
             }
             whisper::check_weights(
@@ -219,29 +208,27 @@ fn check_container(file: &File, kind: ModelKind, bytes: u64) -> Result<()> {
 pub fn validate_text_model(path: &Path) -> Result<()> {
     let helper = std::env::current_exe()?.with_file_name("voai-text-helper");
     let mut child = Command::new(helper)
+        .env(voai_l10n::WORKER_LANGUAGE_ENV, voai_l10n::language())
         .arg("--validate-model-v1")
         .arg(path)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .context("Не удалось запустить проверку текстовой модели")?;
+        .context(tr("model.check.start"))?;
     let deadline = Instant::now() + Duration::from_secs(120);
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                ensure!(
-                    status.success(),
-                    "llama.cpp не смог открыть модель или применить её шаблон диалога. Выберите совместимую текстовую GGUF-модель"
-                );
+                ensure!(status.success(), tr("model.check.incompatible"));
                 return Ok(());
             }
             Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(50)),
             status => {
                 let _ = child.kill();
                 let _ = child.wait();
-                status.context("Проверка модели прервана")?;
-                anyhow::bail!("Время проверки текстовой модели истекло")
+                status.context(tr("model.check.stopped"))?;
+                anyhow::bail!(tr("model.check.timeout"))
             }
         }
     }

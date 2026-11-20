@@ -7,6 +7,7 @@ use std::{
     io::{self, BufWriter, Read, Seek, SeekFrom, Write},
     path::Path,
 };
+use voai_l10n::tr;
 use whisper_rs::{WhisperContext, WhisperContextParameters, WhisperState};
 
 const STRIDE: u64 = 24 * RATE as u64;
@@ -40,12 +41,12 @@ fn report(writer: &mut impl Write, update: Update<'_>) -> io::Result<()> {
 
 pub fn file_worker_main() -> Result<(), String> {
     let mut args = std::env::args_os().skip(2);
-    let model = args.next().ok_or("Не указана модель Whisper.")?;
+    let model = args.next().ok_or(tr("file.whisper.missing"))?;
     let language = args
         .next()
         .and_then(|s| s.into_string().ok())
-        .ok_or("Не указан язык речи.")?;
-    let path = args.next().ok_or("Не указан путь к звуку.")?;
+        .ok_or(tr("file.language.missing"))?;
+    let path = args.next().ok_or(tr("file.audio.missing"))?;
     if args.next().is_some()
         || language.is_empty()
         || language.len() > 12
@@ -53,23 +54,18 @@ pub fn file_worker_main() -> Result<(), String> {
             .bytes()
             .all(|c| c.is_ascii_alphabetic() || c == b'-')
     {
-        return Err("Некорректные параметры распознавания.".into());
+        return Err(tr("file.args").into());
     }
-    let mut input = File::open(path).map_err(|_| "Временная аудиодорожка недоступна.")?;
-    let len = input
-        .metadata()
-        .map_err(|_| "Не удалось прочитать длину записи.")?
-        .len();
+    let mut input = File::open(path).map_err(|_| tr("file.track.unavailable"))?;
+    let len = input.metadata().map_err(|_| tr("file.track.length"))?.len();
     if len == 0 || len % 2 != 0 {
-        return Err("Аудиодорожка пуста или повреждена.".into());
+        return Err(tr("file.track.damaged").into());
     }
     whisper_rs::install_logging_hooks();
     let ctx =
         WhisperContext::new_with_params(Path::new(&model), WhisperContextParameters::default())
-            .map_err(|_| "Не удалось открыть речевую модель.")?;
-    let mut state = ctx
-        .create_state()
-        .map_err(|_| "Не удалось запустить Whisper.")?;
+            .map_err(|_| tr("file.model.open"))?;
+    let mut state = ctx.create_state().map_err(|_| tr("file.whisper.start"))?;
     let mut writer = BufWriter::new(io::stdout().lock());
     let total = len / 2;
     let mut pending = Vec::new();
@@ -79,11 +75,11 @@ pub fn file_worker_main() -> Result<(), String> {
         let right = (center + STRIDE + CONTEXT).min(total);
         input
             .seek(SeekFrom::Start(left * 2))
-            .map_err(|_| "Не удалось перейти к звуку.")?;
+            .map_err(|_| tr("file.audio.seek"))?;
         let mut samples = vec![0i16; (right - left) as usize];
         input
             .read_exact(bytemuck::cast_slice_mut(&mut samples))
-            .map_err(|_| "Не удалось дочитать звук.")?;
+            .map_err(|_| tr("file.audio.read"))?;
         let words = recognize(
             &mut state,
             &samples,
@@ -110,14 +106,15 @@ pub fn file_worker_main() -> Result<(), String> {
         }
         if !words.is_empty() {
             report(&mut writer, Update::Words { words: &words })
-                .map_err(|_| "Расшифровка прервана.")?;
+                .map_err(|_| tr("file.transcription.interrupted"))?;
         }
         let progress = if finished {
             100
         } else {
             (center + STRIDE) * 100 / total
         };
-        report(&mut writer, Update::Progress { progress }).map_err(|_| "Расшифровка прервана.")?;
+        report(&mut writer, Update::Progress { progress })
+            .map_err(|_| tr("file.transcription.interrupted"))?;
         if finished {
             break;
         }
@@ -188,13 +185,11 @@ fn recognize_region(
     params.set_max_len(1);
     state
         .full(params, &pcm)
-        .map_err(|_| "Whisper не смог распознать фрагмент записи.")?;
+        .map_err(|_| tr("file.whisper.segment"))?;
     let base = millis(offset);
     let limit = millis(offset + samples.len() as u64);
     for piece in state.as_iter().filter(|s| s.no_speech_probability() < 0.8) {
-        let text = piece
-            .to_str_lossy()
-            .map_err(|_| "Whisper вернул некорректный текст.")?;
+        let text = piece.to_str_lossy().map_err(|_| tr("file.whisper.text"))?;
         let text = text.trim();
         if text.is_empty() {
             continue;

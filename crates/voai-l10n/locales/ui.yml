@@ -1,0 +1,610 @@
+_version: 2
+ui.accessibility.purpose:
+  en: "Type into other apps"
+  ru: "Для ввода текста в других приложениях"
+ui.action.cancel:
+  en: "Cancel"
+  ru: "Отмена"
+ui.action.cancel_progress:
+  en: "Cancel"
+  ru: "Отменить"
+ui.action.change:
+  en: "Change"
+  ru: "Сменить"
+ui.action.close:
+  en: "Close"
+  ru: "Закрыть"
+ui.action.configure:
+  en: "Configure"
+  ru: "Настроить"
+ui.action.connect:
+  en: "Connect"
+  ru: "Подключить"
+ui.action.delete:
+  en: "Delete"
+  ru: "Удалить"
+ui.action.disconnect:
+  en: "Disconnect"
+  ru: "Отключить"
+ui.action.retry:
+  en: "Retry"
+  ru: "Повторить"
+ui.action.save:
+  en: "Save"
+  ru: "Сохранить"
+ui.action.select:
+  en: "Select"
+  ru: "Выбрать"
+ui.dialog.open_failed:
+  en: "Couldn’t open the file picker."
+  ru: "Не удалось открыть окно выбора файла."
+ui.dialog.save_failed:
+  en: "Couldn’t open the save dialog."
+  ru: "Не удалось открыть окно сохранения."
+ui.dictation.microphone:
+  en: "Microphone"
+  ru: "Микрофон"
+ui.dictation.model:
+  en: "Speech model"
+  ru: "Речевая модель"
+ui.dictation.noise:
+  en: "Noise suppression"
+  ru: "Шумоподавление"
+ui.dictation.noise_hint:
+  en: "Reduce background noise before transcribing."
+  ru: "Приглушает фоновый шум во время диктовки."
+ui.dictation.permissions:
+  en: "Permissions"
+  ru: "Разрешения"
+ui.dictation.shortcut:
+  en: "Dictation shortcut"
+  ru: "Клавиши диктовки"
+ui.dictation.spoken_language:
+  en: "Spoken language"
+  ru: "Язык речи"
+ui.dictation.try:
+  en: "Try dictation"
+  ru: "Попробовать диктовку"
+ui.dictation.widget:
+  en: "Dictation widget"
+  ru: "Виджет диктовки"
+ui.edit.api_key:
+  en: "API key"
+  ru: "API-ключ"
+ui.edit.cloud_privacy:
+  en: "Sends the transcript and instructions to the provider. Audio stays on your Mac."
+  ru: "Провайдер получит текст и инструкцию. Аудио останется на Mac."
+ui.edit.connecting:
+  en: "Connecting…"
+  ru: "Подключаюсь…"
+ui.edit.find_models:
+  en: "Find models"
+  ru: "Найти модели"
+ui.edit.hide_token:
+  en: "Hide token"
+  ru: "Скрыть токен"
+ui.edit.instructions:
+  en: "Editing instructions"
+  ru: "Инструкция для модели"
+ui.edit.key_saved:
+  en: "Saved in Keychain"
+  ru: "Сохранён в Связке ключей"
+ui.edit.model:
+  en: "Model"
+  ru: "Модель"
+ui.edit.none:
+  en: "No editing"
+  ru: "Без обработки"
+ui.edit.off_hint:
+  en: "Insert the transcript as spoken."
+  ru: "Текст появится у курсора без правок."
+ui.edit.prompt_settings:
+  en: "Editing instructions"
+  ru: "Инструкция для модели"
+ui.edit.provider:
+  en: "Provider"
+  ru: "Провайдер"
+ui.edit.restore:
+  en: "Restore default"
+  ru: "По умолчанию"
+ui.edit.save_tip:
+  en: "Save instructions (⌘S)"
+  ru: "Сохранить инструкцию (⌘S)"
+ui.edit.saved:
+  en: "Saved"
+  ru: "Сохранено"
+ui.edit.server_address:
+  en: "Server address"
+  ru: "Адрес сервера"
+ui.edit.server_token:
+  en: "Server token"
+  ru: "Токен сервера"
+ui.edit.text_model:
+  en: "Text model"
+  ru: "Текстовая модель"
+ui.edit.token:
+  en: "Token…"
+  ru: "Токен…"
+ui.edit.unsaved:
+  en: "Unsaved"
+  ru: "Не сохранено"
+ui.files.back:
+  en: "Back to transcript"
+  ru: "К расшифровке"
+ui.files.choose_file:
+  en: "Choose a file…"
+  ru: "Выбрать файл…"
+ui.files.editing:
+  en: "Text editing"
+  ru: "Обработка текста"
+ui.files.export:
+  en: "Export ▾"
+  ru: "Экспорт ▾"
+ui.files.local_hint:
+  en: "Audio and video are transcribed on this Mac."
+  ru: "Voai расшифрует аудио или видео на этом Mac."
+ui.files.new:
+  en: "New transcript"
+  ru: "Новая расшифровка"
+ui.files.no_speech:
+  en: "No speech found in this recording."
+  ru: "В записи не нашлось речи."
+ui.files.recognition:
+  en: "Speech recognition"
+  ru: "Распознавание"
+ui.files.saved:
+  en: "Saved · %{name}"
+  ru: "Сохранено · %{name}"
+ui.files.saved_list:
+  en: "Saved ▾"
+  ru: "Сохранённые ▾"
+ui.files.segments:
+  en: "Show timestamps"
+  ru: "По фрагментам"
+ui.files.speakers:
+  en: "Speakers"
+  ru: "Спикеры"
+ui.files.srt:
+  en: "Subtitles (.srt)"
+  ru: "Субтитры (.srt)"
+ui.files.transcribe:
+  en: "Transcribe"
+  ru: "Расшифровать"
+ui.files.transcribe_without:
+  en: "Transcribe without speakers…"
+  ru: "Расшифровать без спикеров…"
+ui.files.txt:
+  en: "Text (.txt)"
+  ru: "Текст (.txt)"
+ui.files.without_speakers:
+  en: "Off"
+  ru: "Не определять"
+ui.history.after:
+  en: "Edited"
+  ru: "После обработки"
+ui.history.before:
+  en: "Original"
+  ru: "До обработки"
+ui.history.collapse:
+  en: "Collapse"
+  ru: "Свернуть"
+ui.history.date_format:
+  en: "%Y-%m-%d"
+  ru: "%d.%m.%Y"
+ui.history.delete_confirm:
+  en: "Delete audio and text"
+  ru: "Удалить аудио и текст"
+ui.history.details:
+  en: "Details"
+  ru: "Подробнее"
+ui.history.edit_failed:
+  en: "Editing failed. The original text is saved."
+  ru: "Не удалось обработать текст. Исходник сохранён."
+ui.history.empty:
+  en: "No dictations yet"
+  ru: "Записей пока нет"
+ui.history.first:
+  en: "Record a dictation to see the audio and text here."
+  ru: "После первой диктовки здесь появятся запись и текст."
+ui.history.hint:
+  en: "Your last 20 dictations are saved on this Mac."
+  ru: "На этом Mac хранятся последние 20 диктовок."
+ui.history.loading:
+  en: "Loading recordings…"
+  ru: "Загрузка записей…"
+ui.history.play:
+  en: "Play"
+  ru: "Слушать"
+ui.history.stop:
+  en: "Stop"
+  ru: "Стоп"
+ui.history.today:
+  en: "Today"
+  ru: "Сегодня"
+ui.history.unchanged:
+  en: "No edits needed."
+  ru: "Текст остался без изменений."
+ui.history.yesterday:
+  en: "Yesterday"
+  ru: "Вчера"
+ui.lang.russian:
+  en: "Русский"
+  ru: "Русский"
+ui.language.english:
+  en: "English"
+  ru: "English"
+ui.language.interface:
+  en: "Interface language"
+  ru: "Язык интерфейса"
+ui.language.system:
+  en: "System language"
+  ru: "Как в macOS"
+ui.menu.choose_speech:
+  en: "Choose a speech model"
+  ru: "Выберите речевую модель"
+ui.menu.history:
+  en: "Dictation History"
+  ru: "История диктовки"
+ui.menu.permissions:
+  en: "Permissions needed"
+  ru: "Нужны разрешения"
+ui.menu.quit:
+  en: "Quit Voai"
+  ru: "Выйти из Voai"
+ui.menu.settings:
+  en: "Settings…"
+  ru: "Настройки…"
+ui.menu.shortcut:
+  en: "Dictation · %{shortcut}"
+  ru: "Диктовка · %{shortcut}"
+ui.menu.update:
+  en: "Check for Updates…"
+  ru: "Проверить обновления…"
+ui.microphone.default:
+  en: "System default"
+  ru: "Системный"
+ui.microphone.level:
+  en: "Input level"
+  ru: "Уровень звука"
+ui.microphone.purpose:
+  en: "Record your voice"
+  ru: "Для записи речи"
+ui.mode.cloud:
+  en: "Cloud"
+  ru: "Облако"
+ui.mode.file:
+  en: "Model file"
+  ru: "Из файла"
+ui.mode.off:
+  en: "Off"
+  ru: "Выкл."
+ui.mode.server:
+  en: "Local server"
+  ru: "Локальный сервер"
+ui.model.catalogue:
+  en: "Catalog"
+  ru: "Каталог"
+ui.model.catalogue_open:
+  en: "Browse models"
+  ru: "Открыть каталог"
+ui.model.checking:
+  en: "Checking file…"
+  ru: "Проверка файла…"
+ui.model.choose:
+  en: "Choose a model"
+  ru: "Выбрать модель"
+ui.model.choose_folder:
+  en: "Choose a folder"
+  ru: "Выбрать папку"
+ui.model.chosen:
+  en: "Selected"
+  ru: "Выбрано"
+ui.model.download:
+  en: "Download"
+  ru: "Скачать"
+ui.model.download_named:
+  en: "%{model} · %{received} of %{total}"
+  ru: "%{model} · %{received} из %{total}"
+ui.model.download_progress:
+  en: "%{received} of %{total} · %{percent}%"
+  ru: "%{received} из %{total} · %{percent}%"
+ui.model.first_download:
+  en: "Download a model or select a Whisper file."
+  ru: "Скачайте модель или подключите свой файл Whisper."
+ui.model.folder_name:
+  en: "Folder · %{name}"
+  ru: "Папка · %{name}"
+ui.model.gguf_file:
+  en: "Choose a GGUF file"
+  ru: "Выбрать файл GGUF"
+ui.model.link_file:
+  en: "Link file…"
+  ru: "Подключить файл…"
+ui.model.link_folder:
+  en: "Link folder…"
+  ru: "Подключить папку…"
+ui.model.linked_files:
+  en: "Linked files"
+  ru: "Подключённые файлы"
+ui.model.linked_folder:
+  en: "Linked folder"
+  ru: "Подключённая папка"
+ui.model.open:
+  en: "Open models"
+  ru: "Открыть модели"
+ui.model.pick_installed:
+  en: "Choose an installed model."
+  ru: "Выберите установленную модель."
+ui.model.resume:
+  en: "Resume"
+  ru: "Продолжить"
+ui.model.selected:
+  en: "Selected"
+  ru: "Выбрана"
+ui.model.unavailable:
+  en: "Model unavailable"
+  ru: "Модель недоступна"
+ui.model.whisper_file:
+  en: "Choose a Whisper file"
+  ru: "Выбрать файл Whisper"
+ui.models.diarization:
+  en: "Speaker identification"
+  ru: "Определение спикеров"
+ui.models.diarization_files:
+  en: "For your own sherpa-onnx models, select a folder containing segmentation.onnx and embedding.onnx."
+  ru: "Для своих моделей sherpa-onnx выберите папку с segmentation.onnx и embedding.onnx."
+ui.models.diarization_size:
+  en: "31.1 MB · Identifies who spoke when"
+  ru: "31,1 МБ · Разделяет речь по голосам"
+ui.models.disk:
+  en: "On disk · %{size}"
+  ru: "На диске · %{size}"
+ui.models.speech:
+  en: "Speech"
+  ru: "Речь"
+ui.models.text:
+  en: "Text"
+  ru: "Текст"
+ui.page.dictation:
+  en: "Dictation"
+  ru: "Диктовка"
+ui.page.editing:
+  en: "Editing"
+  ru: "Обработка"
+ui.page.history:
+  en: "History"
+  ru: "История"
+ui.page.models:
+  en: "Models"
+  ru: "Модели"
+ui.page.transcription:
+  en: "Transcription"
+  ru: "Расшифровка"
+ui.panel.cancel:
+  en: "Cancel  Esc"
+  ru: "Отменить  Esc"
+ui.panel.close:
+  en: "Close  Esc"
+  ru: "Закрыть  Esc"
+ui.panel.focus_hint:
+  en: "Place the cursor and press %{shortcut}"
+  ru: "Поставьте курсор и нажмите %{shortcut}"
+ui.panel.insert_original:
+  en: "Insert original"
+  ru: "Вставить без правок"
+ui.panel.limit:
+  en: "Recording stopped. Release the shortcut."
+  ru: "Запись завершена. Отпустите клавиши."
+ui.panel.permissions:
+  en: "Set up permissions"
+  ru: "Настроить разрешения"
+ui.panel.release:
+  en: "Release to insert text"
+  ru: "Отпустите клавиши, чтобы ввести текст"
+ui.panel.remaining:
+  en: "Recording ends in %{seconds}s"
+  ru: "До конца записи %{seconds} с"
+ui.panel.speak:
+  en: "Start speaking…"
+  ru: "Говорите…"
+ui.permission.accessibility:
+  en: "Accessibility"
+  ru: "Универсальный доступ"
+ui.permission.allow:
+  en: "Allow"
+  ru: "Разрешить"
+ui.permission.allowed:
+  en: "Allowed"
+  ru: "Разрешено"
+ui.phase.edit_failed:
+  en: "Editing unavailable"
+  ru: "Не удалось обработать текст"
+ui.phase.editing:
+  en: "Editing…"
+  ru: "Редактирую…"
+ui.phase.error:
+  en: "Dictation stopped"
+  ru: "Диктовка прервана"
+ui.phase.focus:
+  en: "Choose a text field"
+  ru: "Выберите поле ввода"
+ui.phase.inserting:
+  en: "Inserting text…"
+  ru: "Вставляю текст…"
+ui.phase.listening:
+  en: "Listening"
+  ru: "Слушаю"
+ui.phase.ready:
+  en: "Ready to dictate"
+  ru: "Можно диктовать"
+ui.phase.transcribing:
+  en: "Transcribing…"
+  ru: "Распознаю…"
+ui.phase.uncertain:
+  en: "Check the text field"
+  ru: "Проверьте поле ввода"
+ui.playback.stop:
+  en: "Stop"
+  ru: "Остановить"
+ui.settings.title:
+  en: "Voai Settings"
+  ru: "Настройки Voai"
+ui.shortcut.hold:
+  en: "Hold while speaking"
+  ru: "Удерживайте, пока говорите"
+ui.shortcut.invalid:
+  en: "Include ⌥, ⌘ or ⌃."
+  ru: "Добавьте ⌥, ⌘ или ⌃."
+ui.shortcut.modifiers:
+  en: "Use a shortcut or right ⌘"
+  ru: "Сочетание клавиш или правый ⌘"
+ui.shortcut.press:
+  en: "Press a shortcut…"
+  ru: "Нажмите сочетание…"
+ui.shortcut.right_command:
+  en: "Right ⌘"
+  ru: "Правый ⌘"
+ui.shortcut.space:
+  en: "Space"
+  ru: "Пробел"
+ui.size.gb:
+  en: "%{size} GB"
+  ru: "%{size} ГБ"
+ui.size.mb:
+  en: "%{size} MB"
+  ru: "%{size} МБ"
+ui.speaker.change:
+  en: "Assign speaker"
+  ru: "Выбрать спикера"
+ui.speaker.hide_original:
+  en: "Hide original"
+  ru: "Скрыть исходник"
+ui.speaker.name:
+  en: "Speaker name"
+  ru: "Имя спикера"
+ui.speaker.new:
+  en: "New speaker…"
+  ru: "Новый спикер…"
+ui.speaker.new_line:
+  en: "Name the speaker for this line"
+  ru: "Имя спикера для этой реплики"
+ui.speaker.original:
+  en: "Original"
+  ru: "Исходник"
+ui.speaker.play_line:
+  en: "Play this line"
+  ru: "Слушать реплику"
+ui.speaker.rename:
+  en: "Rename speaker…"
+  ru: "Переименовать спикера…"
+ui.speaker.rename_all:
+  en: "Rename this speaker throughout the transcript"
+  ru: "Новое имя спикера для всей записи"
+ui.speaker.review:
+  en: "Check speaker"
+  ru: "Проверить спикера"
+ui.speaker.unknown:
+  en: "Unassigned"
+  ru: "Без спикера"
+ui.speech.automatic:
+  en: "Auto-detect"
+  ru: "Определять автоматически"
+ui.switcher.cloud:
+  en: "Cloud · %{provider}"
+  ru: "Облако · %{provider}"
+ui.switcher.dictation:
+  en: "For dictation"
+  ru: "Для диктовки"
+ui.switcher.edit_settings:
+  en: "Editing settings"
+  ru: "Настройки обработки"
+ui.switcher.off:
+  en: "Off"
+  ru: "Выключена"
+ui.switcher.on_mac:
+  en: "On this Mac"
+  ru: "На этом Mac"
+ui.switcher.server:
+  en: "Server"
+  ru: "Сервер"
+ui.telegram.bot:
+  en: "Bot"
+  ru: "Бот"
+ui.telegram.bot_token:
+  en: "Bot token"
+  ru: "Токен бота"
+ui.telegram.confirm_delivery:
+  en: "Already in chat"
+  ru: "Уже в чате"
+ui.telegram.create_bot:
+  en: "Send /newbot to @BotFather, then paste the token here."
+  ru: "Отправьте команду /newbot боту @BotFather и вставьте токен сюда."
+ui.telegram.disconnect_hint:
+  en: "Stop the bot and remove its token from this Mac"
+  ru: "Остановить бота и удалить его токен с этого Mac"
+ui.telegram.hide_network:
+  en: "Hide network settings"
+  ru: "Скрыть настройки сети"
+ui.telegram.intro:
+  en: "Forward a voice message, audio or video up to 20 MB. Voai transcribes it on your Mac and replies in the same chat."
+  ru: "Перешлите боту голосовое сообщение, аудио или видео до 20 МБ. Voai расшифрует запись на Mac и ответит в том же чате."
+ui.telegram.link_account:
+  en: "Link account"
+  ru: "Привязать аккаунт"
+ui.telegram.model_source:
+  en: "Uses the models selected in Transcription"
+  ru: "Используются модели из раздела «Расшифровка»"
+ui.telegram.network:
+  en: "Network settings…"
+  ru: "Настройки сети…"
+ui.telegram.network_detail:
+  en: "Voai uses your Mac’s network settings, including VPN. To use a local SOCKS5 proxy, enter its port on 127.0.0.1."
+  ru: "Voai использует настройки сети macOS, включая VPN. Для локального SOCKS5-прокси укажите порт на 127.0.0.1."
+ui.telegram.online_hint:
+  en: "Keep Voai open and your Mac online to receive messages."
+  ru: "Чтобы бот принимал сообщения, оставьте Voai открытой и подключите Mac к интернету."
+ui.telegram.open_botfather:
+  en: "Open @BotFather"
+  ru: "Открыть @BotFather"
+ui.telegram.open_chat:
+  en: "Open chat"
+  ru: "Открыть чат"
+ui.telegram.pair_help:
+  en: "Open the link in Telegram and tap Start. Only this account can send recordings to the bot."
+  ru: "Откройте ссылку в Telegram и нажмите «Старт». Отправлять записи боту сможет только этот аккаунт."
+ui.telegram.paste_token:
+  en: "Paste bot token"
+  ru: "Вставьте токен бота"
+ui.telegram.port:
+  en: "Port"
+  ru: "Порт"
+ui.telegram.proxy_port:
+  en: "Local proxy · 127.0.0.1:%{port}"
+  ru: "Локальный прокси · 127.0.0.1:%{port}"
+ui.telegram.resend:
+  en: "Send again"
+  ru: "Отправить ещё раз"
+ui.telegram.sender:
+  en: "Linked account"
+  ru: "Привязанный аккаунт"
+ui.telegram.use_proxy:
+  en: "Use proxy"
+  ru: "Использовать прокси"
+ui.telegram.use_system:
+  en: "Use system settings"
+  ru: "Настройки macOS"
+ui.test.placeholder:
+  en: "Click here and try dictating"
+  ru: "Нажмите сюда и продиктуйте фразу"
+ui.updates.automatic:
+  en: "Check automatically"
+  ru: "Проверять автоматически"
+ui.updates.title:
+  en: "Updates"
+  ru: "Обновления"
+ui.widget.compact:
+  en: "Compact"
+  ru: "Компактный"
+ui.widget.standard:
+  en: "Standard"
+  ru: "Стандартный"

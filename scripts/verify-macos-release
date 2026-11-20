@@ -25,6 +25,11 @@ esac
 codesign --verify --strict --deep "$app"
 codesign --verify --strict --deep "$app/Contents/Frameworks/Sparkle.framework"
 plutil -lint "$app/Contents/Info.plist"
+for locale in en ru; do
+    resources="$app/Contents/Resources/$locale.lproj"
+    plutil -lint "$resources/InfoPlist.strings" "$resources/Media.strings"
+    plutil -extract NSMicrophoneUsageDescription raw "$resources/InfoPlist.strings" >/dev/null
+done
 version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")"
 for name in voai voai-text-helper voai-media-helper voai-diarize; do
     lipo "$app/Contents/MacOS/$name" -verify_arch arm64

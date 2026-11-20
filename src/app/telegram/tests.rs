@@ -175,7 +175,9 @@ fn pairs_once_and_replies_to_forwarded_video_only_for_the_owner() {
             }
         };
         match event {
-            Event::Status(message) if message.contains("502") => reported_outage = true,
+            Event::Status(TelegramStatus::Retrying(api::Error::Rejected(502), _)) => {
+                reported_outage = true
+            }
             Event::Identity { link, .. } => {
                 link_tx.send(link.unwrap()).unwrap();
             }

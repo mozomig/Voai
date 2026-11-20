@@ -7502,7 +7502,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voai"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "async-channel 2.5.0",
  "block2",
@@ -7531,6 +7531,7 @@ dependencies = [
  "tempfile",
  "tray-icon",
  "uuid",
+ "voai-l10n",
  "voai-models",
  "voai-speech",
  "zeroize",
@@ -7538,7 +7539,7 @@ dependencies = [
 
 [[package]]
 name = "voai-diarize"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -7546,8 +7547,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "voai-l10n"
+version = "1.6.0"
+dependencies = [
+ "rust-i18n",
+ "serde",
+ "serde_yaml",
+ "sys-locale",
+]
+
+[[package]]
 name = "voai-models"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -7558,12 +7569,13 @@ dependencies = [
  "tempfile",
  "ureq 3.5.2",
  "url",
+ "voai-l10n",
  "zeroize",
 ]
 
 [[package]]
 name = "voai-speech"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "bytemuck",
  "cpal",
@@ -7574,16 +7586,18 @@ dependencies = [
  "rubato",
  "serde",
  "serde_json",
+ "voai-l10n",
  "whisper-rs",
 ]
 
 [[package]]
 name = "voai-text-helper"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "anyhow",
  "llama-cpp-2",
  "serde_json",
+ "voai-l10n",
 ]
 
 [[package]]

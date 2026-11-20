@@ -11,6 +11,7 @@ use std::{
     time::Duration,
 };
 use store::Store;
+use voai_l10n::tr;
 
 #[derive(Clone, PartialEq)]
 pub enum Outcome {
@@ -99,7 +100,7 @@ impl History {
             .as_ref()
             .is_none_or(|sender| sender.send(cmd).is_err())
         {
-            self.view.error = Some("История недоступна.");
+            self.view.error = Some(tr("app.history.unavailable"));
         }
     }
     pub fn poll(&mut self) {
@@ -127,9 +128,9 @@ impl Worker {
                 // AVAudioPlayer retains its data. All access stays on the worker.
                 let audio =
                     unsafe { AVAudioPlayer::initWithData_error(AVAudioPlayer::alloc(), &bytes) }
-                        .map_err(|_| "Не удалось открыть аудиозапись.")?;
+                        .map_err(|_| tr("app.history.open_recording"))?;
                 if !unsafe { audio.play() } {
-                    return Err("Не удалось начать воспроизведение.");
+                    return Err(tr("app.audio.start_playback"));
                 }
                 self.player = Some(audio);
                 self.view.playing = Some(id);

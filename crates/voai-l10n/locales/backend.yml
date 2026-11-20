@@ -1,0 +1,553 @@
+_version: 2
+app.app.already_running:
+  en: "Voai is already running. Open Settings from the menu bar."
+  ru: "Voai уже запущена. Откройте настройки из строки меню."
+app.audio.devices_refresh:
+  en: "Couldn’t refresh the microphone list."
+  ru: "Не удалось обновить список микрофонов."
+app.audio.mic_unavailable:
+  en: "Microphone unavailable."
+  ru: "Микрофон недоступен."
+app.audio.start_playback:
+  en: "Couldn’t start playback."
+  ru: "Не удалось начать воспроизведение."
+app.cli.help:
+  en: "voai                 Open settings and enable dictation\nvoai probe-input     Test direct text input in an editor"
+  ru: "voai                 Открыть настройки и включить глобальную диктовку\nvoai probe-input     Проверить прямой ввод фразы «Тест Voai 🎙» в редакторе"
+app.cli.pid:
+  en: "Enter the PID of the test app."
+  ru: "Укажите PID тестового приложения."
+app.dictation.busy:
+  en: "Finish dictating first."
+  ru: "Сначала завершите диктовку."
+app.dictation.focus_field:
+  en: "Place the cursor in a text field in your editor or in Voai’s test field."
+  ru: "Поставьте курсор в своём редакторе или в пробном поле Voai."
+app.dictation.language_unavailable:
+  en: "This speech language is unavailable."
+  ru: "Этот язык речи недоступен."
+app.dictation.mic_permission:
+  en: "Allow microphone access in Dictation settings."
+  ru: "Разрешите доступ к микрофону в разделе «Диктовка»."
+app.dictation.recording_interrupted:
+  en: "Recording stopped. Start dictating again."
+  ru: "Запись прервалась. Начните диктовку заново."
+app.dictation.target_changed:
+  en: "The text field or selection changed."
+  ru: "Поле или выделение изменилось."
+app.downloads.cancelled:
+  en: "Download cancelled."
+  ru: "Загрузка отменена."
+app.downloads.interrupted:
+  en: "Download interrupted."
+  ru: "Загрузка прервалась."
+app.editing.empty_result:
+  en: "The model returned no text."
+  ru: "Модель вернула пустой текст."
+app.editing.interrupted:
+  en: "Text editing stopped."
+  ru: "Обработка прервалась."
+app.editing.unknown_provider:
+  en: "Unknown provider."
+  ru: "Неизвестный провайдер."
+app.files.audio_track:
+  en: "Couldn’t read the audio track. Check that the file contains audio in a supported format."
+  ru: "Не удалось прочитать аудиодорожку. Проверьте, что в файле есть звук и его формат поддерживается."
+app.files.cannot_play:
+  en: "Couldn’t play the original recording."
+  ru: "Не удалось воспроизвести исходную запись."
+app.files.choose_media:
+  en: "Choose an audio or video file."
+  ru: "Выберите аудио- или видеофайл."
+app.files.decode_failed:
+  en: "Couldn’t decode the audio."
+  ru: "Не удалось декодировать звук."
+app.files.edit_failed:
+  en: "Couldn’t edit the transcript."
+  ru: "Не удалось обработать расшифровку."
+app.files.editing:
+  en: "Editing text"
+  ru: "Обработка текста"
+app.files.export_extension:
+  en: "Use a filename ending in .%{extension}."
+  ru: "Выберите имя с расширением .%{extension}."
+app.files.export_failed:
+  en: "Couldn’t export the transcript."
+  ru: "Не удалось экспортировать расшифровку."
+app.files.export_location:
+  en: "Choose a folder outside Voai’s data folder."
+  ru: "Выберите папку за пределами каталога данных Voai."
+app.files.export_overwrite:
+  en: "Choose a different filename to keep the original recording."
+  ru: "Выберите другое имя, чтобы сохранить исходную запись."
+app.files.exporting:
+  en: "Exporting transcript"
+  ru: "Экспорт расшифровки"
+app.files.folder_unavailable:
+  en: "This folder is unavailable."
+  ru: "Папка недоступна."
+app.files.identifying_speakers:
+  en: "Identifying speakers"
+  ru: "Определение спикеров"
+app.files.import_cancelled:
+  en: "Import cancelled."
+  ru: "Импорт отменён."
+app.files.library_list:
+  en: "Couldn’t load your transcripts."
+  ru: "Не удалось загрузить список расшифровок."
+app.files.library_open:
+  en: "Couldn’t open the transcript library."
+  ru: "Не удалось открыть библиотеку расшифровок."
+app.files.line_unavailable:
+  en: "This segment is unavailable."
+  ru: "Реплика недоступна."
+app.files.no_audio:
+  en: "This file has no audio."
+  ru: "В файле нет звука."
+app.files.no_speech:
+  en: "No speech was detected."
+  ru: "В записи не обнаружена речь."
+app.files.open_source:
+  en: "Couldn’t open the original recording."
+  ru: "Не удалось открыть исходную запись."
+app.files.opening:
+  en: "Opening transcript"
+  ru: "Открытие расшифровки"
+app.files.opening_library:
+  en: "Opening library"
+  ru: "Открытие библиотеки"
+app.files.options_unavailable:
+  en: "Transcription settings are still loading. Try sending the file again in a moment."
+  ru: "Настройки расшифровки ещё загружаются. Попробуйте отправить файл чуть позже."
+app.files.playback_source_changed:
+  en: "The recording has changed and can no longer be played here."
+  ru: "Исходная запись изменилась. Воспроизвести реплику не получится."
+app.files.preparing:
+  en: "Preparing file"
+  ru: "Подготовка файла"
+app.files.read_audio:
+  en: "Couldn’t read the audio."
+  ru: "Не удалось прочитать звук."
+app.files.read_failed:
+  en: "Couldn’t read the transcript."
+  ru: "Не удалось прочитать расшифровку."
+app.files.read_options:
+  en: "Couldn’t read your transcription settings."
+  ru: "Не удалось прочитать настройки расшифровки."
+app.files.reading:
+  en: "Reading audio"
+  ru: "Чтение аудио"
+app.files.recognition_failed:
+  en: "Couldn’t transcribe the file. Check the speech model and available memory."
+  ru: "Не удалось распознать файл. Проверьте речевую модель и свободную память."
+app.files.recognizer_failed:
+  en: "The speech recognizer stopped."
+  ru: "Распознавание прервалось."
+app.files.recognizing:
+  en: "Transcribing speech"
+  ru: "Распознавание речи"
+app.files.remaining_original:
+  en: "Editing stopped. The remaining segments keep their original text."
+  ru: "Обработка прервалась. У оставшихся реплик сохранён исходный текст."
+app.files.save_failed:
+  en: "Couldn’t save the transcript."
+  ru: "Не удалось сохранить расшифровку."
+app.files.save_options:
+  en: "Couldn’t save your transcription settings."
+  ru: "Не удалось сохранить настройки расшифровки."
+app.files.saving:
+  en: "Saving transcript"
+  ru: "Сохранение расшифровки"
+app.files.saving_settings:
+  en: "Saving settings"
+  ru: "Сохранение настроек"
+app.files.select_transcript:
+  en: "Choose a transcript first."
+  ru: "Выберите расшифровку."
+app.files.source_changed:
+  en: "The recording changed while Voai was reading it."
+  ru: "Запись изменилась во время чтения."
+app.files.source_unavailable:
+  en: "The original recording is unavailable."
+  ru: "Исходная запись недоступна."
+app.files.speakers_skipped:
+  en: "Couldn’t identify the speakers. Your transcript and timestamps are saved."
+  ru: "Не удалось определить спикеров. Текст и таймкоды сохранены."
+app.files.task_busy:
+  en: "Wait for the current task to finish."
+  ru: "Дождитесь окончания текущей задачи."
+app.files.task_interrupted:
+  en: "The current task stopped."
+  ru: "Задача прервалась."
+app.files.temp_dir:
+  en: "Couldn’t create a temporary folder."
+  ru: "Не удалось создать временную папку."
+app.files.unavailable:
+  en: "This transcript is unavailable."
+  ru: "Расшифровка недоступна."
+app.history.delete_failed:
+  en: "Couldn’t delete the recording."
+  ru: "Не удалось удалить запись."
+app.history.missing:
+  en: "This recording is unavailable."
+  ru: "Запись недоступна."
+app.history.open_failed:
+  en: "Couldn’t open dictation history."
+  ru: "Не удалось открыть историю диктовок."
+app.history.open_recording:
+  en: "Couldn’t open the recording."
+  ru: "Не удалось открыть аудиозапись."
+app.history.read_failed:
+  en: "Couldn’t load dictation history."
+  ru: "Не удалось загрузить историю."
+app.history.save_failed:
+  en: "Couldn’t save the recording to history."
+  ru: "Не удалось сохранить запись в истории."
+app.history.unavailable:
+  en: "Dictation history is unavailable."
+  ru: "История недоступна."
+app.insertion.accessibility_timeout:
+  en: "Accessibility request timed out"
+  ru: "Истекло время ожидания ответа Accessibility"
+app.insertion.app_changed:
+  en: "The active app changed."
+  ru: "Активное приложение сменилось."
+app.insertion.app_switched:
+  en: "The active app changed during text input."
+  ru: "Активное приложение сменилось во время ввода."
+app.insertion.app_timeout:
+  en: "The app didn’t respond. Return to your editor and try again."
+  ru: "Приложение не ответило. Вернитесь в редактор и попробуйте ещё раз."
+app.insertion.ax_write:
+  en: "Couldn’t write to AXSelectedText"
+  ru: "Не удалось записать AXSelectedText"
+app.insertion.check_field:
+  en: "Couldn’t check the field type (AX %{code})."
+  ru: "Не удалось проверить тип поля (AX %{code})."
+app.insertion.check_support:
+  en: "Couldn’t check whether this field supports direct input"
+  ru: "Не удалось проверить поддержку прямого ввода"
+app.insertion.choose_editable:
+  en: "Select an editable text field."
+  ru: "Выберите редактируемое текстовое поле."
+app.insertion.cursor_missing:
+  en: "Couldn’t find the cursor. Select another text field."
+  ru: "Не удалось найти курсор. Выберите другое поле."
+app.insertion.field_switched:
+  en: "The focused field changed during text input."
+  ru: "Во время ввода активным стало другое поле."
+app.insertion.keyboard_event:
+  en: "Couldn’t create a keyboard event."
+  ru: "Не удалось создать событие клавиатуры."
+app.insertion.multiline:
+  en: "This field accepts a single line. Choose another field."
+  ru: "Выберите другое поле для ввода нескольких строк."
+app.insertion.no_app:
+  en: "No active app."
+  ru: "Нет активного приложения."
+app.insertion.other_app:
+  en: "Another app is now active."
+  ru: "Сейчас активно другое приложение."
+app.insertion.permission:
+  en: "In System Settings, open Privacy & Security → Accessibility and turn on Voai. If it’s already on, remove the old entry and add Voai.app again."
+  ru: "Откройте «Конфиденциальность и безопасность» → «Универсальный доступ» и включите Voai. Если доступ уже включён, удалите старую запись и добавьте Voai.app заново."
+app.insertion.place_cursor:
+  en: "Place the cursor in a text field."
+  ru: "Установите курсор в текстовое поле."
+app.insertion.read_attribute:
+  en: "Couldn’t read %{key} (AX %{code})."
+  ru: "Не удалось прочитать %{key} (AX %{code})."
+app.insertion.secure_field:
+  en: "Dictation is unavailable in secure fields."
+  ru: "В защищённом поле диктовка недоступна."
+app.insertion.selection_missing:
+  en: "The cursor or selection is unavailable."
+  ru: "Недоступно положение курсора или выделения."
+app.insertion.settings_failed:
+  en: "Couldn’t open System Settings: %{error}"
+  ru: "Не удалось открыть системные настройки: %{error}"
+app.insertion.uncertain:
+  en: "Check the text at the cursor. The app didn’t confirm the insertion."
+  ru: "Проверьте, появился ли текст у курсора. Приложение не подтвердило вставку."
+app.insertion.unsupported:
+  en: "This field doesn’t support direct text input."
+  ru: "Поле не поддерживает прямой ввод."
+app.insertion.verify_failed:
+  en: "Couldn’t verify the inserted text."
+  ru: "Не удалось проверить результат ввода."
+app.models.check_interrupted:
+  en: "The model check stopped."
+  ru: "Проверка модели прервалась."
+app.models.checking:
+  en: "Checking file…"
+  ru: "Проверка файла…"
+app.models.choose_first:
+  en: "Download or add a model in Settings."
+  ru: "Скачайте или подключите модель в настройках."
+app.models.cloud_empty:
+  en: "No cloud models available."
+  ru: "Нет доступных облачных моделей."
+app.models.cloud_unknown:
+  en: "Unknown cloud model."
+  ru: "Неизвестная облачная модель."
+app.models.connected:
+  en: "Model added. You can now select it."
+  ru: "Модель подключена и доступна для выбора."
+app.models.connection_missing:
+  en: "This model connection no longer exists."
+  ru: "Подключение модели не найдено."
+app.models.disconnected:
+  en: "Model disconnected. The file is still on disk."
+  ru: "Модель отключена. Файл остался на диске."
+app.models.discovery_interrupted:
+  en: "Model discovery stopped."
+  ru: "Поиск моделей прервался."
+app.models.file_missing:
+  en: "Put the model file back in its folder or download it again."
+  ru: "Верните файл модели в папку или скачайте его заново."
+app.models.need_text:
+  en: "Choose a text model for editing."
+  ru: "Для обработки выберите текстовую модель."
+app.models.refresh_server:
+  en: "Refresh the server’s model list."
+  ru: "Обновите список моделей сервера."
+app.models.save_connection:
+  en: "Couldn’t save the model connection: %{error}"
+  ru: "Не удалось сохранить подключение: %{error}"
+app.models.server_empty:
+  en: "The server is reachable but has no models."
+  ru: "На сервере нет доступных моделей."
+app.models.unavailable:
+  en: "Model unavailable."
+  ru: "Модель недоступна."
+app.models.wait_for_check:
+  en: "Wait for the model check to finish."
+  ru: "Дождитесь окончания проверки модели."
+app.models.wrong_type:
+  en: "Choose a compatible model in Settings."
+  ru: "Выберите подходящую модель в настройках."
+app.probe.captured:
+  en: "Test field captured."
+  ru: "Тестовое поле зафиксировано."
+app.probe.choose_field:
+  en: "Select a test field. Voai will capture it in four seconds."
+  ru: "Выберите тестовое поле. Voai зафиксирует его через четыре секунды."
+app.probe.complete:
+  en: "Request sent. Check the text at the cursor."
+  ru: "Ввод отправлен. Проверьте текст у курсора."
+app.probe.result:
+  en: "Input result: %{error}"
+  ru: "Результат ввода: %{error}"
+app.settings.absolute_data_dir:
+  en: "VOAI_DATA_DIR must be an absolute path."
+  ru: "Для VOAI_DATA_DIR нужен абсолютный путь."
+app.settings.home_missing:
+  en: "Your home folder is unavailable."
+  ru: "Домашняя папка недоступна."
+app.settings.key_removed:
+  en: "Key removed."
+  ru: "Ключ удалён."
+app.settings.key_saved:
+  en: "Key saved to Keychain."
+  ru: "Ключ сохранён в Связке ключей."
+app.settings.open_failed:
+  en: "Couldn’t open settings: %{error}"
+  ru: "Не удалось открыть настройки: %{error}"
+app.settings.version_unsupported:
+  en: "This settings file was saved by an unsupported version of Voai."
+  ru: "Эта версия Voai не поддерживает формат сохранённых настроек."
+app.shortcuts.assign_failed:
+  en: "Couldn’t set %{shortcut}: %{error}"
+  ru: "Не удалось назначить %{shortcut}: %{error}"
+app.shortcuts.enable_failed:
+  en: "Couldn’t enable the dictation shortcut."
+  ru: "Не удалось включить клавиши диктовки."
+app.shortcuts.escape_reserved:
+  en: "Esc is reserved for cancelling dictation."
+  ru: "Esc отменяет диктовку. Выберите другое сочетание."
+app.shortcuts.monitor_global:
+  en: "Couldn’t detect right ⌘ in other apps."
+  ru: "Не удалось отслеживать правый ⌘ в других приложениях."
+app.shortcuts.monitor_local:
+  en: "Couldn’t detect right ⌘ in Voai."
+  ru: "Не удалось отслеживать правый ⌘ в Voai."
+app.shortcuts.need_modifier:
+  en: "Include ⌥, ⌘, or ⌃ in the shortcut."
+  ru: "Добавьте ⌥, ⌘ или ⌃ к сочетанию."
+app.speakers.check_failed:
+  en: "Couldn’t verify the speaker models."
+  ru: "Не удалось проверить модели спикеров."
+app.speakers.checking:
+  en: "Checking speaker models"
+  ru: "Проверка моделей спикеров"
+app.speakers.choose_models:
+  en: "Add or download speaker models first."
+  ru: "Подключите или скачайте модели спикеров."
+app.speakers.default_name:
+  en: "Speaker %{id}"
+  ru: "Спикер %{id}"
+app.speakers.downloading:
+  en: "Downloading speaker models"
+  ru: "Загрузка моделей спикеров"
+app.speakers.identification_failed:
+  en: "Couldn’t identify the speakers."
+  ru: "Не удалось определить спикеров."
+app.speakers.incompatible:
+  en: "Choose segmentation and speaker embedding models compatible with sherpa-onnx."
+  ru: "Выберите модели сегментации и голосовых признаков, совместимые с sherpa-onnx."
+app.speakers.invalid_result:
+  en: "Couldn’t read the speaker information."
+  ru: "Не удалось прочитать данные о спикерах."
+app.speakers.limit:
+  en: "Too many speakers."
+  ru: "Слишком много спикеров."
+app.speakers.name_limit:
+  en: "Enter a speaker name (up to 80 characters)."
+  ru: "Введите имя спикера (до 80 знаков)."
+app.speakers.save_models:
+  en: "Couldn’t save the speaker models."
+  ru: "Не удалось сохранить модели спикеров."
+app.speakers.select_folder:
+  en: "Choose a folder containing segmentation.onnx and embedding.onnx."
+  ru: "Выберите папку с файлами segmentation.onnx и embedding.onnx."
+app.speakers.start_check:
+  en: "Couldn’t start the model check."
+  ru: "Не удалось запустить проверку моделей."
+app.speakers.unavailable:
+  en: "This speaker is unavailable."
+  ru: "Спикер недоступен."
+app.telegram.chat_unavailable:
+  en: "The bot can’t send messages to this chat."
+  ru: "Бот не может отправить сообщение в этот чат."
+app.telegram.check_token:
+  en: "Check the token from BotFather."
+  ru: "Проверьте токен из BotFather."
+app.telegram.confirm_part:
+  en: "Telegram didn’t confirm delivery. Check your chat for part %{part} of %{total}."
+  ru: "Telegram не подтвердил доставку. Проверьте в чате часть %{part} из %{total}."
+app.telegram.conflict:
+  en: "This bot has a webhook or is running in another app."
+  ru: "У бота включён webhook или он уже запущен в другом приложении."
+app.telegram.connect_failed:
+  en: "Couldn’t connect to api.telegram.org."
+  ru: "Не удалось открыть соединение с api.telegram.org."
+app.telegram.connected:
+  en: "Bot connected."
+  ru: "Бот на связи."
+app.telegram.connecting:
+  en: "Connecting to Telegram…"
+  ru: "Подключение к Telegram…"
+app.telegram.delete_token:
+  en: "Couldn’t remove the bot token from Keychain."
+  ru: "Не удалось удалить токен из Связки ключей."
+app.telegram.disconnected:
+  en: "The connection to Telegram dropped."
+  ru: "Соединение с Telegram оборвалось."
+app.telegram.disconnecting:
+  en: "Disconnecting bot…"
+  ru: "Отключение бота…"
+app.telegram.dns:
+  en: "DNS couldn’t resolve api.telegram.org."
+  ru: "Не удалось найти api.telegram.org через DNS."
+app.telegram.downloading:
+  en: "Downloading recording…"
+  ru: "Загрузка записи…"
+app.telegram.file_limit:
+  en: "The bot can download up to 20 MB. Open larger files in Voai on your Mac."
+  ru: "Бот может скачать файл размером до 20 МБ. Большие файлы откройте в Voai на Mac."
+app.telegram.file_missing:
+  en: "Telegram no longer has this file. Forward it again."
+  ru: "Файл недоступен в Telegram. Перешлите его ещё раз."
+app.telegram.forbidden:
+  en: "Telegram denied access."
+  ru: "Telegram запретил доступ."
+app.telegram.help:
+  en: "Send a voice message, audio file, video, or video message to get a transcript."
+  ru: "Пришлите голосовое, аудиофайл, видео или кружок. В ответ придёт расшифровка."
+app.telegram.identity_timeout:
+  en: "Telegram didn’t confirm the bot in time."
+  ru: "Telegram не подтвердил бота за отведённое время."
+app.telegram.invalid_credentials:
+  en: "Telegram rejected the request. Check the bot token."
+  ru: "Telegram отклонил запрос. Проверьте токен бота."
+app.telegram.invalid_response:
+  en: "Couldn’t read Telegram’s response."
+  ru: "Не удалось прочитать ответ Telegram."
+app.telegram.network:
+  en: "Couldn’t reach Telegram."
+  ru: "Нет связи с Telegram."
+app.telegram.no_recipient:
+  en: "Couldn’t identify the recipient."
+  ru: "Не удалось определить получателя ответа."
+app.telegram.no_speech:
+  en: "Couldn’t make out any speech in this recording."
+  ru: "В записи не удалось разобрать речь."
+app.telegram.offline:
+  en: "No internet connection."
+  ru: "Нет подключения к сети."
+app.telegram.open_settings:
+  en: "Couldn’t open Telegram settings."
+  ru: "Не удалось открыть настройки Telegram."
+app.telegram.oversized:
+  en: "This file is larger than 20 MB. Save it to your Mac and open it in Voai under Transcription."
+  ru: "Файл больше 20 МБ. Сохраните его на Mac и откройте в разделе «Расшифровка» в Voai."
+app.telegram.read_key:
+  en: "Couldn’t read the bot token from Keychain."
+  ru: "Не удалось открыть токен в Связке ключей."
+app.telegram.read_settings:
+  en: "Couldn’t read Telegram settings."
+  ru: "Не удалось прочитать настройки Telegram."
+app.telegram.ready:
+  en: "Waiting for a recording."
+  ru: "Бот ждёт запись."
+app.telegram.reconnect:
+  en: "Connect your bot again."
+  ru: "Подключите бота заново."
+app.telegram.rejected:
+  en: "Telegram rejected the request."
+  ru: "Telegram отклонил запрос."
+app.telegram.remove_settings:
+  en: "Couldn’t remove Telegram settings."
+  ru: "Не удалось удалить настройки Telegram."
+app.telegram.retry_delay:
+  en: "%{error} Retrying in %{seconds} s."
+  ru: "%{error} Повторная попытка через %{seconds} с."
+app.telegram.retry_download:
+  en: "Download interrupted. Retrying…"
+  ru: "Загрузка прервалась. Повторная попытка…"
+app.telegram.save_settings:
+  en: "Couldn’t save Telegram settings on your Mac."
+  ru: "Не удалось сохранить настройки Telegram на Mac."
+app.telegram.save_token:
+  en: "Couldn’t save the bot token to Keychain."
+  ru: "Не удалось сохранить токен в Связке ключей."
+app.telegram.server_error:
+  en: "Telegram returned HTTP %{code}."
+  ru: "Сбой на стороне Telegram (HTTP %{code})."
+app.telegram.start_bot:
+  en: "Open the bot in Telegram and tap Start."
+  ru: "Откройте бота в Telegram и нажмите «Старт»."
+app.telegram.stopped:
+  en: "Stopped."
+  ru: "Остановлено."
+app.telegram.temp_file:
+  en: "Couldn’t save the temporary file on your Mac."
+  ru: "Не удалось сохранить временный файл на Mac."
+app.telegram.timeout:
+  en: "Telegram didn’t respond in time."
+  ru: "Telegram не ответил вовремя."
+app.telegram.tls:
+  en: "Couldn’t establish a secure connection to Telegram."
+  ru: "Не удалось установить защищённое соединение с Telegram."
+app.telegram.token_mismatch:
+  en: "This token belongs to another bot. Connect the bot again."
+  ru: "Токен принадлежит другому боту. Подключите его заново."
+app.telegram.too_many_requests:
+  en: "Telegram received too many requests."
+  ru: "Слишком много запросов к Telegram."
+app.telegram.transcribing:
+  en: "Transcribing on your Mac…"
+  ru: "Распознавание речи на Mac…"
+app.telegram.transcription_failed:
+  en: "Couldn’t transcribe this recording. Check the model and file format in Voai."
+  ru: "Не удалось расшифровать запись. Проверьте модель и формат файла в Voai."

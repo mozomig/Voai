@@ -1,3 +1,4 @@
+use voai_l10n::tr;
 mod cloud;
 mod credentials;
 mod local;
@@ -10,7 +11,9 @@ pub use local::process_local;
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_PROCESSING_PROMPT: &str = "Исправь регистр и пунктуацию, убери слова-паразиты и случайные повторы. Сохрани язык, смысл и обращение на «ты» или «вы». Узнаваемые технические термины и аббревиатуры пиши в общепринятой форме. В контексте технологий «эй ай», «эй-ай» и «эйай» пиши как AI. Например: «мы используем эй ай» → «Мы используем AI.» Междометие «ай» сохраняй: «ай больно» → «Ай, больно!» Верни только исправленную фразу.";
+pub fn default_processing_prompt() -> &'static str {
+    tr("prompt.default")
+}
 pub const MAX_PROMPT_BYTES: usize = 8192;
 const MAX_INPUT: usize = 120_000;
 const MAX_OUTPUT: usize = 128 * 1024;
@@ -38,22 +41,16 @@ impl Provider {
 }
 
 pub fn validate_processing_prompt(prompt: &str) -> Result<()> {
-    ensure!(!prompt.trim().is_empty(), "Введите инструкцию для модели");
-    ensure!(
-        prompt.len() <= MAX_PROMPT_BYTES,
-        "Сократите инструкцию до 8192 байт"
-    );
-    ensure!(
-        !prompt.contains('\0'),
-        "Инструкция содержит недопустимый нулевой символ"
-    );
+    ensure!(!prompt.trim().is_empty(), tr("prompt.empty"));
+    ensure!(prompt.len() <= MAX_PROMPT_BYTES, tr("prompt.long"));
+    ensure!(!prompt.contains('\0'), tr("prompt.nul"));
     Ok(())
 }
 
 fn validate_input(text: &str) -> Result<()> {
     ensure!(
         !text.trim().is_empty() && text.len() <= MAX_INPUT,
-        "Расшифровка пуста или слишком длинна"
+        tr("processing.input.invalid")
     );
     Ok(())
 }
@@ -62,7 +59,7 @@ fn edited(output: &str) -> Result<String> {
     let text = output.trim();
     ensure!(
         !text.is_empty() && text.len() <= MAX_OUTPUT,
-        "Провайдер вернул пустой или слишком большой результат"
+        tr("processing.output.invalid")
     );
     Ok(text.into())
 }

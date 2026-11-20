@@ -34,6 +34,9 @@ func pump(_ seconds: Double) async {
   let log = Pipe()
   process.executableURL = executable
   process.arguments = ["probe-input", "--pid", String(ProcessInfo.processInfo.processIdentifier)]
+  var environment = ProcessInfo.processInfo.environment
+  environment["VOAI_UI_LANGUAGE"] = "en"
+  process.environment = environment
   process.standardError = log
   process.standardOutput = log
   let before = NSPasteboard.general.changeCount
@@ -49,7 +52,7 @@ func pump(_ seconds: Double) async {
     var bytes = [UInt8](repeating: 0, count: 4096)
     let n = read(fd, &bytes, bytes.count)
     if n > 0 { output += String(decoding: bytes.prefix(n), as: UTF8.self) }
-    if !applied && output.contains("Цель зафиксирована") {
+    if !applied && output.contains("Test field captured.") {
       applied = true
       afterCapture?()
     }

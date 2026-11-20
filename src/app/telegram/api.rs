@@ -9,13 +9,14 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
+use voai_l10n::{tf, tr};
 use zeroize::Zeroizing;
 
 pub(super) const MAX_BYTES: u64 = 20 * 1024 * 1024;
 const ORIGIN: &str = "https://api.telegram.org";
 
-#[derive(Debug)]
-pub(super) enum Error {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Error {
     Network,
     Timeout,
     Connection(&'static str),
@@ -60,25 +61,23 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match self {
-            Self::Connection(reason) => reason,
-            Self::Timeout => "Telegram не ответил вовремя.",
-            Self::Network => "Нет связи с Telegram.",
-            Self::InvalidResponse => "Не удалось прочитать ответ Telegram.",
-            Self::Rejected(401 | 404) => "Telegram отклонил запрос. Проверьте токен бота.",
-            Self::Rejected(403) => "Telegram запретил доступ.",
-            Self::Rejected(409) => "У бота включён webhook или он уже запущен в другом приложении.",
-            Self::RateLimited(_) => "Слишком много запросов к Telegram.",
+            Self::Connection(reason) => tr(reason),
+            Self::Timeout => tr("app.telegram.timeout"),
+            Self::Network => tr("app.telegram.network"),
+            Self::InvalidResponse => tr("app.telegram.invalid_response"),
+            Self::Rejected(401 | 404) => tr("app.telegram.invalid_credentials"),
+            Self::Rejected(403) => tr("app.telegram.forbidden"),
+            Self::Rejected(409) => tr("app.telegram.conflict"),
+            Self::RateLimited(_) => tr("app.telegram.too_many_requests"),
             Self::Rejected(code @ 500..=599) => {
-                return write!(f, "Сбой на стороне Telegram (HTTP {code}).");
+                return f.write_str(&tf!("app.telegram.server_error", code = code));
             }
-            Self::Rejected(_) => "Telegram отклонил запрос.",
-            Self::TooLarge => {
-                "Бот может скачать файл размером до 20 МБ. Большие файлы откройте в Voai на Mac."
-            }
-            Self::Cancelled => "Загрузка отменена.",
-            Self::FileUnavailable => "Файл недоступен в Telegram. Перешлите его ещё раз.",
-            Self::ChatUnavailable => "Бот не может отправить сообщение в этот чат.",
-            Self::Storage => "Не удалось сохранить временный файл на Mac.",
+            Self::Rejected(_) => tr("app.telegram.rejected"),
+            Self::TooLarge => tr("app.telegram.file_limit"),
+            Self::Cancelled => tr("app.downloads.cancelled"),
+            Self::FileUnavailable => tr("app.telegram.file_missing"),
+            Self::ChatUnavailable => tr("app.telegram.chat_unavailable"),
+            Self::Storage => tr("app.telegram.temp_file"),
         };
         f.write_str(text)
     }
@@ -121,7 +120,7 @@ impl Api {
                     .bytes()
                     .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
         }) {
-            return Err("Проверьте токен из BotFather.".into());
+            return Err(tr("app.telegram.check_token").into());
         }
         Ok(())
     }
@@ -169,7 +168,7 @@ impl Api {
             })
             .map_err(|error| match error {
                 Error::Timeout if method == "getMe" => {
-                    Error::Connection("Telegram не подтвердил бота за отведённое время.")
+                    Error::Connection("app.telegram.identity_timeout")
                 }
                 Error::TooLarge => Error::InvalidResponse,
                 other => other,

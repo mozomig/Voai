@@ -5,6 +5,7 @@ Requires ffmpeg (fixture generation only) and the macOS Milena voice.
 """
 import argparse
 import json
+import os
 import re
 import struct
 import subprocess
@@ -100,7 +101,8 @@ def exercise(bundle, model, work):
     manifest.write_text("#EXTM3U\n#EXTINF:10,\nclip.ts\n")
     for source, expected in [(work / "silent.mp4", "нет аудиодорожки"), (manifest, "плейлиста")]:
         attempt = subprocess.run([media, "decode", source, work / "invalid.pcm"],
-                                 capture_output=True, text=True, timeout=15)
+                                 capture_output=True, text=True, timeout=15,
+                                 env={**os.environ, "VOAI_UI_LANGUAGE": "ru"})
         assert attempt.returncode != 0 and expected in attempt.stderr
     print("Verified M4A, one-hour video, chunk seam, time offsets, playback and invalid inputs.")
 

@@ -6,12 +6,13 @@ use std::{
     os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::Path,
 };
+use voai_l10n::tr;
 
 pub(super) struct Store(Connection);
 
 impl Store {
     pub fn open(dir: &Path) -> Result<Self, &'static str> {
-        let error = "Не удалось открыть историю на диске.";
+        let error = tr("app.history.open_failed");
         fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -39,7 +40,7 @@ impl Store {
     }
 
     pub fn save(&mut self, entry: NewEntry) -> Result<(), &'static str> {
-        let error = "Не удалось сохранить запись в истории.";
+        let error = tr("app.history.save_failed");
         let duration = entry.audio.len() as i64 * 1000 / voai_speech::SAMPLE_RATE as i64;
         let mut wav = Cursor::new(Vec::with_capacity(entry.audio.len() * 2 + 64));
         let mut writer = hound::WavWriter::new(
@@ -71,7 +72,7 @@ impl Store {
     }
 
     pub fn list(&self) -> Result<Vec<Entry>, &'static str> {
-        let error = "Не удалось загрузить историю.";
+        let error = tr("app.history.read_failed");
         let mut stmt = self.0.prepare("SELECT id,started,duration_ms,original,edited,failed FROM entries ORDER BY id DESC LIMIT 20").map_err(|_| error)?;
         stmt.query_map([], |row| {
             Ok(Entry {
@@ -94,14 +95,14 @@ impl Store {
     pub fn audio(&self, id: i64) -> Result<Vec<u8>, &'static str> {
         self.0
             .query_row("SELECT wav FROM entries WHERE id=?", [id], |row| row.get(0))
-            .map_err(|_| "Запись недоступна.")
+            .map_err(|_| tr("app.history.missing"))
     }
 
     pub fn delete(&self, id: i64) -> Result<(), &'static str> {
         self.0
             .execute("DELETE FROM entries WHERE id=?", [id])
             .map(|_| ())
-            .map_err(|_| "Не удалось удалить запись.")
+            .map_err(|_| tr("app.history.delete_failed"))
     }
 }
 

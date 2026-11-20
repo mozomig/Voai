@@ -39,16 +39,19 @@ voai-speech = { path = "crates/voai-speech" }
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 voai-speech = { path = "crates/voai-speech", features = ["test-fixtures"] }
 
+[dependencies]
+voai-l10n = { path = "crates/voai-l10n" }
+
 [build-dependencies]
 cc = "1"
 
 [workspace]
 resolver = "3"
-members = ["crates/voai-diarize", "crates/voai-models", "crates/voai-speech", "crates/voai-text-helper"]
+members = ["crates/voai-l10n", "crates/voai-diarize", "crates/voai-models", "crates/voai-speech", "crates/voai-text-helper"]
 default-members = ["."]
 
 [workspace.package]
-version = "1.5.0"
+version = "1.6.0"
 edition = "2024"
 
 [profile.dev]

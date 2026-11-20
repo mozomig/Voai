@@ -1,6 +1,7 @@
 //! Passive HAL inventory. Probing stream formats during enumeration can activate
 //! Bluetooth and virtual audio drivers even when the user is only viewing settings.
 use std::ptr::{self, NonNull};
+use voai_l10n::{tf, tr};
 
 use cpal::traits::HostTrait;
 use objc2_core_audio::{
@@ -34,9 +35,9 @@ pub(super) fn selected_device(host: &cpal::Host, name: &str) -> Result<cpal::Dev
         .find(|input| input.label == name)
         // A previously disambiguated selection survives removal of its namesake.
         .or_else(|| inputs.iter().find(|input| input.qualified_name() == name))
-        .ok_or("Выбранный микрофон недоступен. Выберите устройство в настройках.")?;
+        .ok_or(tr("mic.missing"))?;
     host.device_by_id(&cpal::DeviceId(host.id(), input.uid.clone()))
-        .ok_or_else(|| "Микрофон отключён".into())
+        .ok_or_else(|| tr("mic.unplugged").into())
 }
 
 fn inventory() -> Result<Vec<Input>, String> {
@@ -99,14 +100,14 @@ fn all_devices() -> Result<Vec<AudioDeviceID>, String> {
     // Retry once when hot-plugging grows the list between the size query and read.
     let mut last_status = 0;
     for _ in 0..2 {
-        let mut size = property_size(object, &property)
-            .map_err(|e| format!("Не удалось получить список аудиоустройств (Core Audio {e})"))?;
+        let mut size =
+            property_size(object, &property).map_err(|e| tf!("mic.list.failed", e = e))?;
         if size == 0 {
             return Ok(Vec::new());
         }
         let width = size_of::<AudioDeviceID>() as u32;
         if !size.is_multiple_of(width) {
-            return Err("Некорректный размер списка аудиоустройств".into());
+            return Err(tr("mic.list.size").into());
         }
         let mut ids = vec![0; (size / width) as usize];
         // The property is an array of AudioDeviceID, and size is the allocated byte count.
@@ -128,9 +129,7 @@ fn all_devices() -> Result<Vec<AudioDeviceID>, String> {
             return Ok(ids);
         }
     }
-    Err(format!(
-        "Не удалось прочитать список аудиоустройств (Core Audio {last_status})"
-    ))
+    Err(tf!("mic.list.read", last_status = last_status))
 }
 
 fn string_property(object: AudioObjectID, selector: u32) -> Option<String> {

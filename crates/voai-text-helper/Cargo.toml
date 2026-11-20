@@ -5,6 +5,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+voai-l10n = { path = "../voai-l10n" }
 anyhow = "1"
 serde_json = "1"
 llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["metal"] }
