@@ -61,6 +61,7 @@ fn pairs_once_and_replies_to_forwarded_video_only_for_the_owner() {
         let mut replies = Vec::new();
         let mut downloads = 0;
         let mut media_requests = 0;
+        let mut typing = false;
         let mut identity_attempts = 0;
         for req in listener.incoming() {
             let mut socket = req.unwrap();
@@ -79,7 +80,7 @@ fn pairs_once_and_replies_to_forwarded_video_only_for_the_owner() {
                 "getUpdates" if body["offset"] == 0 => {
                     let link = link_rx.recv_timeout(Duration::from_secs(4)).unwrap();
                     let secret = link.split_once("?start=").unwrap().1;
-                    let video = json!({"forward_origin":{"type":"hidden_user"},"video":{"file_id":"forwarded","file_size":5}});
+                    let video = json!({"message_thread_id":72,"forward_origin":{"type":"hidden_user"},"video":{"file_id":"forwarded","file_size":5}});
                     json!({"ok":true,"result":[
                         message(1, 21, json!({"text":"/start guess"})),
                         message(2, 88, json!({"text":format!("/start {secret}")})),
@@ -112,6 +113,17 @@ fn pairs_once_and_replies_to_forwarded_video_only_for_the_owner() {
                         "media".into()
                     }
                 }
+                "sendChatAction" => {
+                    assert_eq!(
+                        body,
+                        json!({"chat_id":88,"message_thread_id":72,"action":"typing"})
+                    );
+                    assert_eq!(replies.len(), 1);
+                    typing = true;
+                    // Cosmetic feedback must never prevent the actual response.
+                    status = 429;
+                    json!({"ok":false,"error_code":429,"parameters":{"retry_after":20}}).to_string()
+                }
                 "sendMessage" => {
                     assert_eq!(body["chat_id"], 88);
                     replies.push((
@@ -128,6 +140,7 @@ fn pairs_once_and_replies_to_forwarded_video_only_for_the_owner() {
             }
         }
         assert_eq!(identity_attempts, 2);
+        assert!(typing, "no progress indication while the owner was waiting");
         assert_eq!(downloads, 3);
         assert_eq!(media_requests, 2);
         assert_eq!(replies.len(), 2);

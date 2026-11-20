@@ -94,6 +94,7 @@ pub(super) struct Message {
     pub(super) id: i64,
     pub(super) text: Option<String>,
     pub(super) media: Option<Media>,
+    pub(super) thread_id: Option<i64>,
 }
 
 pub(super) struct Media {
@@ -154,7 +155,12 @@ impl Api {
         let url = format!("{}/bot{}/{}", self.origin, self.token.as_str(), method);
         let payload = serde_json::to_vec(&body).map_err(|_| Error::InvalidResponse)?;
         let mut bytes = Vec::new();
-        let timeout = Duration::from_secs(if method == "getMe" { 100 } else { 15 });
+        let timeout = Duration::from_secs(match method {
+            // Telegram may need time to prepare a forwarded file on its servers.
+            "getMe" | "getFile" => 100,
+            "sendChatAction" => 2,
+            _ => 15,
+        });
         let response = self
             .agent
             .request(&url, Some(&payload), timeout, 1024 * 1024, |chunk| {
@@ -246,6 +252,14 @@ impl Api {
                 message: update.message.as_ref().and_then(private_message),
             })
             .collect())
+    }
+
+    pub(super) fn typing(&self, message: &Message) -> Result<(), Error> {
+        let mut body = json!({"chat_id": message.chat, "action": "typing"});
+        if let Some(thread) = message.thread_id {
+            body["message_thread_id"] = thread.into();
+        }
+        self.call::<bool>("sendChatAction", body).map(|_| ())
     }
 
     pub(super) fn send(&self, chat: i64, reply: i64, text: &str) -> Result<(), Error> {
@@ -374,6 +388,7 @@ fn private_message(raw: &Value) -> Option<Message> {
         chat,
         text,
         media,
+        thread_id: raw["message_thread_id"].as_i64().filter(|id| *id > 0),
     })
 }
 
@@ -632,6 +647,40 @@ mod tests {
             assert!(!err.to_string().contains("secret"));
             handle.join().unwrap();
         }
+    }
+
+    #[test]
+    fn downloads_voice_when_telegram_takes_over_fifteen_seconds_to_prepare_it() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let api = Api::for_test(format!("http://{}", listener.local_addr().unwrap()));
+        let server = thread::spawn(move || {
+            for (path, data) in [
+                (
+                    "getFile",
+                    r#"{"ok":true,"result":{"file_path":"voice/sample.oga","file_size":4}}"#,
+                ),
+                ("sample.oga", "test"),
+            ] {
+                let (mut socket, _) = listener.accept().unwrap();
+                let (request, _) = super::super::tests::request(&socket);
+                assert_eq!(request.rsplit('/').next(), Some(path));
+                if path == "getFile" {
+                    thread::sleep(Duration::from_secs(16));
+                }
+                write!(
+                    socket,
+                    "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{data}",
+                    data.len()
+                )
+                .unwrap();
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("voice.oga");
+        api.download("voice-file", &dest, &AtomicBool::new(false))
+            .unwrap();
+        assert_eq!(std::fs::read(dest).unwrap(), b"test");
+        server.join().unwrap();
     }
 
     #[test]

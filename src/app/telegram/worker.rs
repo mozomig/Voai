@@ -1,10 +1,11 @@
 use super::{
     DeliveryDecision, Event, Signals,
-    api::{Api, Error, MAX_BYTES, Message},
+    api::{Api, Error, MAX_BYTES, Media, Message},
     state::{self, PendingReply, State},
 };
 use std::{
     path::{Path, PathBuf},
+    sync::mpsc,
     thread,
     time::{Duration, Instant},
 };
@@ -221,6 +222,32 @@ fn response(
     if media.size.is_some_and(|size| size > MAX_BYTES) {
         return Ok(TOO_BIG.into());
     }
+    thread::scope(|scope| {
+        let (done, receiver) = mpsc::channel::<()>();
+        scope.spawn(move || {
+            let mut delay = Duration::from_millis(500);
+            while receiver.recv_timeout(delay) == Err(mpsc::RecvTimeoutError::Timeout)
+                && signals.active()
+            {
+                delay = match api.typing(message) {
+                    Ok(()) => Duration::from_secs(4),
+                    Err(Error::RateLimited(seconds)) => Duration::from_secs(seconds.max(5)),
+                    Err(_) => return,
+                };
+            }
+        });
+        let result = transcribe_media(signals, api, media, transcribe);
+        drop(done);
+        result
+    })
+}
+
+fn transcribe_media(
+    signals: &Signals,
+    api: &Api,
+    media: &Media,
+    transcribe: &impl Fn(PathBuf) -> Result<String, String>,
+) -> Result<String, String> {
     signals.status("Загружаю запись…")?;
     let dir = tempfile::tempdir().map_err(|_| "Не удалось создать временную папку.")?;
     let file = dir.path().join(format!("media.{}", media.extension));
