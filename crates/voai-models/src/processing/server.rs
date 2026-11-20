@@ -128,13 +128,11 @@ fn read_json<T: serde::de::DeserializeOwned>(
 ) -> Result<T> {
     let mut response = result.map_err(|err| match err {
         ureq::Error::StatusCode(401 | 403) => {
-            anyhow::anyhow!("Сервер отклонил доступ. Проверьте токен.")
+            anyhow::anyhow!("Сервер отказал в доступе. Проверьте токен.")
         }
         ureq::Error::StatusCode(status) => anyhow::anyhow!("Локальный сервер вернул HTTP {status}"),
         ureq::Error::Timeout(_) => anyhow::anyhow!("Локальный сервер не ответил вовремя"),
-        _ => anyhow::anyhow!(
-            "Не удалось связаться с локальным сервером. Проверьте адрес и запущен ли сервер."
-        ),
+        _ => anyhow::anyhow!("Сервер не отвечает. Убедитесь, что он запущен, и проверьте адрес."),
     })?;
     ensure!(
         response.status().is_success(),

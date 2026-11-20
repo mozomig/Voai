@@ -25,7 +25,7 @@ fn check(status: AXError, action: &str) -> Result<(), String> {
 }
 
 fn permission_hint() -> &'static str {
-    "Разрешите Voai в «Конфиденциальность и безопасность → Универсальный доступ». Если переключатель уже включён, удалите прежнюю запись Voai и добавьте текущую Voai.app."
+    "Откройте «Конфиденциальность и безопасность» → «Универсальный доступ» и включите Voai. Если доступ уже включён, удалите старую запись и добавьте Voai.app заново."
 }
 
 fn attribute<T: ConcreteType>(field: &AXUIElement, key: &str) -> Result<CFRetained<T>, AXError> {
@@ -47,9 +47,7 @@ fn required<T: ConcreteType>(field: &AXUIElement, key: &str) -> Result<CFRetaine
             "Приложение не ответило. Вернитесь в редактор и попробуйте ещё раз.".into()
         }
         AXError::NoValue | AXError::AttributeUnsupported => match key {
-            "AXSelectedTextRange" => {
-                "Редактор не сообщает положение курсора. Выберите другое текстовое поле.".into()
-            }
+            "AXSelectedTextRange" => "Не удалось найти курсор. Выберите другое поле.".into(),
             "AXFocusedUIElement" | "AXWindow" | "AXFocusedWindow" => {
                 "Установите курсор в текстовое поле.".into()
             }
@@ -102,12 +100,12 @@ fn focused_field(pid: i32) -> Result<CFRetained<AXUIElement>, String> {
 fn capture(expected: Option<i32>) -> Result<Target, String> {
     let pid = front_pid().ok_or("Нет активного приложения")?;
     if expected.is_some_and(|expected| expected != pid) {
-        return Err("Фокус находится в другом процессе.".into());
+        return Err("Сейчас активно другое приложение.".into());
     }
     let field = focused_field(pid)?;
     match attribute::<CFString>(&field, "AXSubrole") {
         Ok(role) if role.to_string() == "AXSecureTextField" => {
-            return Err("Защищённое поле.".into());
+            return Err("В защищённом поле диктовка недоступна.".into());
         }
         Ok(_) | Err(AXError::AttributeUnsupported | AXError::NoValue) => {}
         Err(error) => return Err(format!("Не удалось проверить тип поля (AX {})", error.0)),
@@ -278,7 +276,7 @@ impl Destination {
         // Electron publishes its editable DOM only after assistive clients opt in.
         let front = front_pid().ok_or("Нет активного приложения")?;
         if pid.is_some_and(|expected| front != expected) {
-            return Err("Фокус находится в другом процессе.".into());
+            return Err("Сейчас активно другое приложение.".into());
         }
         let app = unsafe { AXUIElement::new_application(front) };
         let attr = CFString::from_str("AXManualAccessibility");
@@ -300,8 +298,7 @@ impl Destination {
                 let current = capture(None)?;
                 if !current.direct_write && text.chars().any(char::is_control) {
                     return Err(
-                        "Для многострочного текста выберите поле с поддержкой AXSelectedText."
-                            .into(),
+                        "В это поле нельзя вставить несколько строк. Выберите другое поле.".into(),
                     );
                 }
                 Ok(current)
@@ -335,7 +332,7 @@ fn type_unicode(target: &Target, text: &str) -> Result<(), String> {
         }
         let field = focused_field(target.pid)?;
         if field != target.field {
-            return Err("Фокус изменился во время ввода.".into());
+            return Err("Во время ввода активным стало другое поле.".into());
         }
         let mut chunk = Vec::with_capacity(20);
         while let Some(&ch) = chars.peek() {
@@ -430,8 +427,9 @@ impl Receipt {
                 return Some(Ok(()));
             }
         }
-        (status == AXError::InvalidUIElement || Instant::now() >= self.deadline)
-            .then(|| Err("Приложение не подтвердило введённый текст. Проверьте поле.".into()))
+        (status == AXError::InvalidUIElement || Instant::now() >= self.deadline).then(|| {
+            Err("Проверьте, появился ли текст у курсора. Приложение не подтвердило вставку.".into())
+        })
     }
 }
 

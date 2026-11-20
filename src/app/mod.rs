@@ -185,7 +185,7 @@ impl Backend {
                 let keys = self
                     .shortcuts
                     .as_mut()
-                    .ok_or("Глобальные сочетания недоступны")?;
+                    .ok_or("Не удалось включить горячие клавиши")?;
                 return if start {
                     if self.session.phase != Phase::Idle {
                         return Err("Сначала завершите диктовку.".into());
@@ -202,7 +202,7 @@ impl Backend {
                 }
                 self.shortcuts
                     .as_mut()
-                    .ok_or("Глобальные сочетания недоступны")?
+                    .ok_or("Не удалось включить горячие клавиши")?
                     .set(&s)?;
                 next.shortcut = s;
             }
@@ -279,7 +279,7 @@ impl Backend {
                 next.save(&self.dir).map_err(|e| e.to_string())?;
                 self.settings = next;
                 self.connections.forget(&id);
-                self.message = "Файл отключён".into();
+                self.message = "Модель отключена. Файл остался на диске.".into();
                 return Ok(());
             }
             Command::Download(id) => {
@@ -380,7 +380,7 @@ impl Backend {
         let target = if own_window && self.test_focus {
             Destination::Test
         } else if own_window {
-            return Err("Установите курсор в пробное поле или откройте редактор.".into());
+            return Err("Поставьте курсор в поле для диктовки или в своём редакторе.".into());
         } else {
             Destination::Field(macos::Destination::capture()?)
         };
@@ -415,7 +415,7 @@ impl Backend {
             && self.session.phase == Phase::Listening
         {
             self.session
-                .fail("Запись прервана после паузы системы.".into());
+                .fail("Запись прервалась. Начните диктовку заново.".into());
             self.held = false;
         }
         self.last_tick = now;
@@ -468,8 +468,7 @@ impl Backend {
                         Ok(()) => {
                             self.connections.mark_available(&model);
                             self.settings = next;
-                            self.message =
-                                "Файл подключён. Выберите модель для использования.".into();
+                            self.message = "Файл подключён. Теперь модель можно выбрать.".into();
                         }
                         Err(e) => self.message = format!("Не удалось сохранить подключение: {e}"),
                     }

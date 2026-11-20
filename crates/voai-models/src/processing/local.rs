@@ -81,7 +81,7 @@ fn run_local(
                 let _ = child.0.kill();
                 let _ = child.0.wait();
                 check_cancelled(cancel)?;
-                anyhow::bail!("Время ожидания локальной модели истекло");
+                anyhow::bail!("Локальная модель не ответила вовремя");
             }
             match child.0.try_wait() {
                 Ok(Some(status)) => {

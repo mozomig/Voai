@@ -63,7 +63,7 @@ impl ServerDiscovery {
         match result {
             Ok(list) if list.is_empty() => {
                 self.models.clear();
-                self.error = "Сервер доступен. Добавьте в него модель.".into()
+                self.error = "Сервер доступен, но список моделей пуст.".into()
             }
             Ok(list) => self.models = list,
             Err(text) => self.error = text,

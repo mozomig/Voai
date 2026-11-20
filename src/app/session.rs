@@ -160,7 +160,7 @@ impl Session {
                 self.phase = Phase::RecoverFocus;
                 self.message = match reason {
                     InsertionError::Unavailable(e) => e,
-                    _ => "Выберите поле и снова нажмите сочетание клавиш.".into(),
+                    _ => "Поле или выделение изменилось.".into(),
                 };
             }
         }
@@ -255,7 +255,7 @@ impl Session {
             let response = match rx.try_recv() {
                 Ok(result) => result,
                 Err(mpsc::TryRecvError::Empty) => return,
-                Err(mpsc::TryRecvError::Disconnected) => Err("Редактор завершил работу.".into()),
+                Err(mpsc::TryRecvError::Disconnected) => Err("Обработка прервалась.".into()),
             };
             self.processor = None;
             match response {

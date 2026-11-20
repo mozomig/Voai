@@ -68,7 +68,7 @@ impl Settings {
                         .gap_2()
                         .child(icon("disk", p.muted, 14.))
                         .child(text(
-                            format!("Загружено на диск · {}", bytes(occupied)),
+                            format!("На диске · {}", bytes(occupied)),
                             12.,
                             p.muted,
                         )),
@@ -85,9 +85,9 @@ impl Settings {
             multiple: false,
             prompt: Some(
                 if text_model {
-                    "Подключить GGUF"
+                    "Выбрать файл GGUF"
                 } else {
-                    "Подключить Whisper GGML"
+                    "Выбрать файл Whisper"
                 }
                 .into(),
             ),
@@ -211,7 +211,7 @@ impl Settings {
                 Button::new(SharedString::from(format!("unlink-{id}")))
                     .ghost()
                     .small()
-                    .label("Отвязать")
+                    .label("Отключить")
                     .text_color(p.muted)
                     .on_click(cx.listener(move |this, _, _, _| {
                         this.send(Command::DisconnectModel(id.clone()))

@@ -68,9 +68,9 @@ pub(super) fn phase_title(phase: Phase) -> &'static str {
     match phase {
         Phase::Idle => "Готов к диктовке",
         Phase::Listening => "Слушаю",
-        Phase::Finishing => "Завершаю…",
+        Phase::Finishing => "Распознаю…",
         Phase::Editing => "Редактирую…",
-        Phase::Inserting => "Ввожу текст…",
+        Phase::Inserting => "Вставляю текст…",
         Phase::RecoverFocus => "Выберите поле ввода",
         Phase::RecoverText => "Обработка недоступна",
         Phase::Uncertain => "Проверьте поле ввода",
@@ -120,24 +120,24 @@ impl Render for Panel {
                 "Запись остановлена. Отпустите клавиши.".into()
             }
             Phase::Listening if s.elapsed_secs >= 290 => {
-                format!("Осталось {} с до остановки записи", 300 - s.elapsed_secs)
+                format!("До конца записи — {} с", 300 - s.elapsed_secs)
             }
-            Phase::Listening => "Отпустите клавиши для ввода".into(),
+            Phase::Listening => "Отпустите, чтобы вставить текст".into(),
             Phase::RecoverFocus => {
-                format!("Выберите поле и нажмите {}", shortcut_label(&s.shortcut))
+                format!("Поставьте курсор и нажмите {}", shortcut_label(&s.shortcut))
             }
             _ => String::new(),
         };
         let setup: Option<(&str, Box<dyn Action>)> = if s.phase != Phase::Error {
             None
         } else if !s.access_allowed || !s.mic_allowed {
-            Some(("Открыть разрешения", Box::new(super::OpenPermissions)))
+            Some(("Настроить доступ", Box::new(super::OpenPermissions)))
         } else if !s
             .models
             .iter()
             .any(|m| !m.text_model && matches!(m.state, ModelState::Selected))
         {
-            Some(("Выбрать речевую модель", Box::new(super::OpenSpeechModels)))
+            Some(("Выбрать модель", Box::new(super::OpenSpeechModels)))
         } else {
             None
         };
@@ -224,7 +224,7 @@ impl Render for Panel {
             )
             .when(s.phase == Phase::RecoverText, |v| {
                 v.child(row().mt_1().child(
-                    primary_button("insert-original", "Ввести исходный текст", p).on_click(
+                    primary_button("insert-original", "Вставить без правок", p).on_click(
                         cx.listener(|this, _, _, _| {
                             this.engine.borrow_mut().dispatch(Command::UseOriginal)
                         }),

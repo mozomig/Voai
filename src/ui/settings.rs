@@ -41,7 +41,7 @@ impl Page {
 pub(super) fn mode_title(mode: Mode) -> &'static str {
     match mode {
         Mode::Off => "Выкл.",
-        Mode::Local => "Файл модели",
+        Mode::Local => "Из файла",
         Mode::Server => "Локальный сервер",
         Mode::Cloud => "Облако",
     }
@@ -75,13 +75,9 @@ impl Settings {
         let test = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line(true)
-                .placeholder("Поставьте курсор и удерживайте сочетание")
+                .placeholder("Нажмите здесь и попробуйте диктовать")
         });
-        let key = cx.new(|cx| {
-            InputState::new(window, cx)
-                .masked(true)
-                .placeholder("Введите ключ")
-        });
+        let key = cx.new(|cx| InputState::new(window, cx).masked(true));
         cx.subscribe_in(&test, window, |this, _, event, _, _| match event {
             InputEvent::Change => this.edit_revision = this.edit_revision.wrapping_add(1),
             InputEvent::Blur => this.set_test_ready(false),

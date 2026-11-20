@@ -31,7 +31,7 @@ impl Connections {
         wake: async_channel::Sender<()>,
     ) -> Result<(), String> {
         if self.busy() {
-            return Err("Сначала дождитесь проверки текущего файла".into());
+            return Err("Дождитесь проверки файла".into());
         }
         let (tx, rx) = mpsc::channel();
         self.forgotten_during_validation.clear();
@@ -125,7 +125,7 @@ impl Connections {
             .map(|model| {
                 let id = model.id();
                 let state = match self.health.get(&id) {
-                    None => ModelState::Unavailable("Проверяем доступ к файлу…".into()),
+                    None => ModelState::Unavailable("Проверяю файл…".into()),
                     Some(Some(error)) => ModelState::Unavailable(error.clone()),
                     Some(None) if id == settings.speech || id == settings.text => {
                         ModelState::Selected

@@ -184,12 +184,12 @@ impl Session<'_> {
             let reason = mic.interruption().or_else(|| {
                 if last_input.elapsed() >= INPUT_TIMEOUT {
                     Some(if pcm.is_empty() {
-                        "Нет сигнала от микрофона. Проверьте разрешение и устройство."
+                        "Нет звука. Проверьте микрофон и доступ к нему."
                     } else {
                         "Микрофон перестал передавать звук"
                     })
                 } else {
-                    (pcm.len() >= MAX_SAMPLES).then_some("Достигнут предел записи в пять минут")
+                    (pcm.len() >= MAX_SAMPLES).then_some("Прошло пять минут")
                 }
             });
             if let Some(reason) = reason {
@@ -201,7 +201,7 @@ impl Session<'_> {
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .interruption = Some(format!(
-                    "{reason}. Отпустите клавиши для ввода записанной части."
+                    "{reason}. Отпустите клавиши, чтобы вставить записанную часть."
                 ));
                 while self.state.load(Ordering::Acquire) == RECORDING {
                     thread::sleep(Duration::from_millis(20));
@@ -261,7 +261,7 @@ impl Session<'_> {
             *pending = None;
         }
         if pending.is_some_and(|start| start.elapsed() > Duration::from_secs(60)) {
-            return Err("Речевой процесс не ответил вовремя".into());
+            return Err("Whisper не ответил вовремя".into());
         }
         if pending.is_none() && pcm.len() - *last >= RATE {
             *last = pcm.len();

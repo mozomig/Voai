@@ -34,24 +34,28 @@ impl Settings {
             .models
             .iter()
             .find(|m| m.text_model == processing && matches!(m.state, ModelState::Selected));
-        let local_name = local.map(|m| m.name.as_str()).unwrap_or("Выбрать модель");
-        let (title, value) = if processing {
+        let local_name = local.map(|m| m.name.as_str());
+        let (title, model) = if processing {
             match s.mode {
-                Mode::Off => ("Обработка".to_owned(), "Выключена"),
-                Mode::Local => ("Обработка · файл".into(), local_name),
+                Mode::Off => ("Обработка".to_owned(), None),
+                Mode::Local => ("Обработка".into(), local_name),
                 Mode::Server => (
-                    "Обработка · сервер".into(),
-                    if s.server_model.is_empty() {
-                        "Выбрать модель"
-                    } else {
-                        &s.server_model
-                    },
+                    "На сервере".into(),
+                    (!s.server_model.is_empty()).then_some(s.server_model.as_str()),
                 ),
-                Mode::Cloud => (format!("Облако · {}", s.provider), s.cloud_model.as_str()),
+                Mode::Cloud => (
+                    format!("Облако · {}", s.provider),
+                    Some(s.cloud_model.as_str()),
+                ),
             }
         } else {
-            ("Распознавание".into(), local_name)
+            ("Речь".into(), local_name)
         };
+        let value = model.unwrap_or(if processing && s.mode == Mode::Off {
+            "Выключена"
+        } else {
+            "Выбрать"
+        });
         let display = if local.is_some_and(|m| m.local_path.is_some())
             && (!processing || s.mode == Mode::Local)
         {
@@ -73,7 +77,7 @@ impl Settings {
         .h(px(46.))
         .px(px(6.))
         .rounded(px(5.))
-        .tooltip(format!("{title} · {value}"))
+        .when_some(model, |button, name| button.tooltip(name.to_owned()))
         .child(
             row()
                 // Both rows share the same content width in the fixed-width sidebar.
@@ -157,11 +161,9 @@ impl Settings {
             })
             .peekable();
         if models.peek().is_some() {
-            menu = menu.label(if processing {
-                "Текстовые модели на Mac"
-            } else {
-                "Речевые модели на Mac"
-            });
+            if processing {
+                menu = menu.label("На этом Mac");
+            }
             for m in models {
                 let selected = matches!(m.state, ModelState::Selected)
                     && (!processing || s.mode == Mode::Local);
@@ -182,12 +184,7 @@ impl Settings {
         }
         let catalog = owner.clone();
         menu = menu.item(
-            PopupMenuItem::new(if processing {
-                "Каталог текстовых моделей…"
-            } else {
-                "Каталог речевых моделей…"
-            })
-            .on_click(move |_, window, cx| {
+            PopupMenuItem::new("Открыть каталог").on_click(move |_, window, cx| {
                 let _ = catalog.update(cx, |view, cx| {
                     view.text_models = processing;
                     view.file_dialog_error = None;
@@ -197,7 +194,7 @@ impl Settings {
         );
         if processing {
             let owner = owner.clone();
-            menu = menu.item(PopupMenuItem::new("Настройки обработки…").on_click(
+            menu = menu.item(PopupMenuItem::new("Настройки обработки").on_click(
                 move |_, window, cx| {
                     let _ =
                         owner.update(cx, |view, cx| view.navigate(Page::Processing, window, cx));

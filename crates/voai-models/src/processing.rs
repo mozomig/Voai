@@ -38,10 +38,10 @@ impl Provider {
 }
 
 pub fn validate_processing_prompt(prompt: &str) -> Result<()> {
-    ensure!(!prompt.trim().is_empty(), "Введите инструкцию обработки");
+    ensure!(!prompt.trim().is_empty(), "Введите инструкцию для модели");
     ensure!(
         prompt.len() <= MAX_PROMPT_BYTES,
-        "Инструкция превышает 8192 байта"
+        "Сократите инструкцию до 8192 байт"
     );
     ensure!(
         !prompt.contains('\0'),
@@ -53,7 +53,7 @@ pub fn validate_processing_prompt(prompt: &str) -> Result<()> {
 fn validate_input(text: &str) -> Result<()> {
     ensure!(
         !text.trim().is_empty() && text.len() <= MAX_INPUT,
-        "Транскрипт пуст или превышает допустимую длину"
+        "Расшифровка пуста или слишком длинна"
     );
     Ok(())
 }

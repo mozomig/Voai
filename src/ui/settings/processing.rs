@@ -52,8 +52,9 @@ impl Settings {
             .map(|&mode| (mode_title(mode), mode == s.mode))
             .collect();
         let panel = match s.mode {
-            Mode::Off => col()
-                .child(text("Распознанная речь сразу появится у курсора.", 13., p.muted).mt_3()),
+            Mode::Off => {
+                col().child(text("Текст появится у курсора без правок.", 13., p.muted).mt_3())
+            }
             Mode::Local => self.local_processor(p, cx),
             Mode::Server => self.server_processor(p, cx),
             Mode::Cloud => self.cloud_processor(p, cx),
@@ -103,19 +104,14 @@ impl Settings {
                     ),
                 ))
             })
-            .child(
-                row()
-                    .mt_2()
-                    .gap_2()
-                    .child(
-                        button("text-models", "Открыть модели", p).on_click(cx.listener(
-                            |this, _, window, cx| {
-                                this.text_models = true;
-                                this.navigate(Page::Models, window, cx);
-                            },
-                        )),
-                    ),
-            )
+            .child(row().mt_2().gap_2().child(
+                button("text-models", "Открыть каталог", p).on_click(cx.listener(
+                    |this, _, window, cx| {
+                        this.text_models = true;
+                        this.navigate(Page::Models, window, cx);
+                    },
+                )),
+            ))
     }
 
     pub(super) fn cloud_provider(&self) -> voai_models::Provider {
@@ -166,7 +162,7 @@ impl Settings {
             .child(self.secret_row(false, p, cx))
             .child(
                 text(
-                    "Провайдер получит расшифровку и инструкцию. Аудио остаётся на Mac.",
+                    "Сервис получит текст и инструкцию. Запись останется на Mac.",
                     12.,
                     p.muted,
                 )
@@ -195,7 +191,7 @@ impl Settings {
             p,
             label,
             if has_key {
-                "В Связке ключей"
+                "Сохранён в связке ключей"
             } else {
                 ""
             },
@@ -239,7 +235,7 @@ impl Settings {
                             if s.server_loading {
                                 "Подключаюсь…"
                             } else {
-                                "Получить модели"
+                                "Найти модели"
                             },
                             p,
                         )
@@ -343,7 +339,7 @@ impl Settings {
                 row()
                     .justify_between()
                     .gap_2()
-                    .child(label("Инструкция для обработки", p.ink))
+                    .child(label("Инструкция для модели", p.ink))
                     .when(changed, |r| r.child(text("Не сохранено", 12., p.muted))),
             )
             .child(Input::new(&self.prompt).h(px(110.)).w_full())
@@ -356,7 +352,7 @@ impl Settings {
                         Button::new("reset-prompt")
                             .ghost()
                             .small()
-                            .label("По умолчанию")
+                            .label("Вернуть исходную")
                             .text_color(p.muted)
                             .disabled(!restoring)
                             .when(!restoring, |b| b.opacity(0.55))

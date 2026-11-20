@@ -84,10 +84,8 @@ impl Downloads {
                 if let Some(error) = self.errors.get_mut(model.id) {
                     error.1 = bytes;
                 } else if bytes > 0 {
-                    self.errors.insert(
-                        model.id,
-                        ("Загрузка прервана. Можно продолжить.".into(), bytes),
-                    );
+                    self.errors
+                        .insert(model.id, ("Загрузка прервана.".into(), bytes));
                 }
             }
         }
@@ -104,7 +102,7 @@ impl Downloads {
             let result = match job.done.try_recv() {
                 Ok(result) => result,
                 Err(mpsc::TryRecvError::Empty) => return true,
-                Err(mpsc::TryRecvError::Disconnected) => Err("Загрузчик завершил работу".into()),
+                Err(mpsc::TryRecvError::Disconnected) => Err("Загрузка прервалась".into()),
             };
             match result {
                 Ok(()) => self.installed.push(id),
@@ -136,7 +134,10 @@ impl Downloads {
                         ModelState::Installed
                     }
                 } else if selected {
-                    ModelState::Failed("Файл выбранной модели недоступен. Верните его в каталог или повторите загрузку.".into())
+                    ModelState::Failed(
+                        "Файл модели недоступен. Верните его в папку моделей или скачайте заново."
+                            .into(),
+                    )
                 } else {
                     ModelState::Available
                 };
@@ -149,7 +150,9 @@ impl Downloads {
                     on_disk: match &state {
                         ModelState::Selected | ModelState::Installed => model.bytes,
                         ModelState::Downloading { received } => *received,
-                        ModelState::Failed(_) => self.errors.get(model.id).map_or(0, |error| error.1),
+                        ModelState::Failed(_) => {
+                            self.errors.get(model.id).map_or(0, |error| error.1)
+                        }
                         ModelState::Available | ModelState::Unavailable(_) => 0,
                     },
                     text_model: model.kind == ModelKind::Text,

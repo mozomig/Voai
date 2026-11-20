@@ -8,7 +8,7 @@ impl Settings {
             .find(|m| matches!(m.state, ModelState::Selected));
         let downloading = models.clone().find_map(|m| match &m.state {
             ModelState::Downloading { received } => Some(format!(
-                "{} · загружено {} из {}",
+                "{} · {} из {}",
                 m.name,
                 bytes(*received),
                 bytes(m.bytes)
@@ -25,9 +25,9 @@ impl Settings {
                     .clone()
                     .any(|m| matches!(m.state, ModelState::Installed))
                 {
-                    "Выберите одну из установленных моделей."
+                    "Выберите установленную модель."
                 } else {
-                    "Скачайте из каталога или подключите файл Whisper."
+                    "Скачайте модель или подключите свой файл Whisper."
                 }
                 .into(),
                 primary_button("speech-model", "Выбрать модель", p),
@@ -69,7 +69,7 @@ impl Settings {
 
     pub(super) fn dictation(&self, p: Palette, cx: &mut Context<Self>) -> Div {
         let s = &self.snapshot;
-        let mut devices = vec![("Системный микрофон".to_string(), String::new())];
+        let mut devices = vec![("По умолчанию".to_string(), String::new())];
         devices.extend(
             s.microphones
                 .iter()
@@ -164,7 +164,7 @@ impl Settings {
                 Some(
                     row()
                         .gap_2()
-                        .child(text("Входной уровень", 12., p.muted))
+                        .child(text("Уровень звука", 12., p.muted))
                         .child(row().gap(px(2.)).children((0..7).map(|i| {
                             let lit = s.phase == crate::app::Phase::Listening
                                 && s.level.clamp(0., 1.).sqrt() * 7. > i as f32;
@@ -179,7 +179,7 @@ impl Settings {
                     "microphone",
                     s.microphone
                         .clone()
-                        .unwrap_or_else(|| "Системный микрофон".into()),
+                        .unwrap_or_else(|| "По умолчанию".into()),
                     devices,
                     s.microphone.clone().unwrap_or_default(),
                     |id| Command::SetMicrophone((!id.is_empty()).then_some(id)),
@@ -203,16 +203,16 @@ impl Settings {
             .child(Self::setting(
                 p,
                 "Микрофон",
-                "Для записи вашего голоса",
+                "Для записи голоса",
                 self.permission(s.mic_allowed, true, p, cx),
             ))
             .child(Self::setting(
                 p,
                 "Универсальный доступ",
-                "Для ввода текста у курсора",
+                "Для ввода в других приложениях",
                 self.permission(s.access_allowed, false, p, cx),
             ))
-            .child(group_title("Пробная диктовка", p))
+            .child(group_title("Проверка диктовки", p))
             .child(Input::new(&self.test).h(px(58.)).w_full())
     }
 }
