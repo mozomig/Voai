@@ -65,7 +65,26 @@ done
 for helper in voai-text-helper voai-media-helper voai-diarize; do
     codesign "${sign[@]}" "$app/Contents/MacOS/$helper"
 done
-codesign "${sign[@]}" --entitlements packaging/entitlements.plist "$app"
+entitlements=packaging/entitlements.plist
+constraint=()
+if [[ "$identity" == "-" && -n "$repo" ]]; then
+    # Ad hoc code has no Team ID. Pin the bundled arm64 Sparkle library and
+    # allow macOS platform libraries while keeping the hardened runtime.
+    entitlements="$stage/adhoc-entitlements.plist"
+    cp packaging/entitlements.plist "$entitlements"
+    /usr/libexec/PlistBuddy -c 'Add :com.apple.security.cs.disable-library-validation bool true' "$entitlements"
+    hash=$(codesign -d --arch arm64 --verbose=4 "$framework" 2>&1 | sed -n 's/^CDHash=//p')
+    /usr/bin/python3 - "$stage/libraries.plist" "$hash" <<'PYTHON'
+import plistlib, sys
+cdhash = bytes.fromhex(sys.argv[2])
+if len(cdhash) != 20:
+    sys.exit("Cannot pin the bundled Sparkle framework")
+with open(sys.argv[1], "wb") as output:
+    plistlib.dump({"$or": {"validation-category": 1, "cdhash": cdhash}}, output)
+PYTHON
+    constraint=(--library-constraint "$stage/libraries.plist")
+fi
+codesign "${sign[@]}" ${constraint[@]+"${constraint[@]}"} --entitlements "$entitlements" "$app"
 codesign --verify --deep --strict "$app"
 if [[ -n "${VOAI_NOTARY_PROFILE:-}" ]]; then
     signing_info="$(codesign -dv --verbose=2 "$app" 2>&1)"
