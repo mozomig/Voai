@@ -116,7 +116,11 @@ impl Settings {
                                     .gap(px(2.))
                                     .child(label("Клавиши диктовки", p.ink))
                                     .child(text(
-                                        self.shortcut_error.unwrap_or("Удерживайте, пока говорите"),
+                                        self.shortcut_error.unwrap_or(if self.capture {
+                                            "Сочетание или правый ⌘"
+                                        } else {
+                                            "Удерживайте, пока говорите"
+                                        }),
                                         12.,
                                         p.muted,
                                     )),
@@ -144,8 +148,10 @@ impl Settings {
                             })
                             .disabled(s.phase != crate::app::Phase::Idle)
                             .on_click(cx.listener(|this, _, window, cx| {
-                                this.send(Command::CaptureShortcut(true));
-                                this.capture = true;
+                                this.capture = this
+                                    .engine
+                                    .borrow_mut()
+                                    .try_dispatch(Command::CaptureShortcut(true));
                                 window.focus(&this.focus);
                                 cx.notify();
                             })),

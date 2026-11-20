@@ -52,6 +52,7 @@ pub(super) struct Settings {
     page: Page,
     text_models: bool,
     capture: bool,
+    right_command_pending: bool,
     focus: FocusHandle,
     test: Entity<InputState>,
     key: Entity<InputState>,
@@ -137,6 +138,7 @@ impl Settings {
             page: Page::Dictation,
             text_models: false,
             capture: false,
+            right_command_pending: false,
             focus,
             test,
             key,
@@ -256,9 +258,32 @@ impl Settings {
     fn end_capture(&mut self, cx: &mut Context<Self>) {
         if self.capture {
             self.capture = false;
+            self.right_command_pending = false;
             self.shortcut_error = None;
             self.send(Command::CaptureShortcut(false));
             cx.notify();
+        }
+    }
+
+    fn modifier_input(
+        &mut self,
+        event: &ModifiersChangedEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.capture {
+            return;
+        }
+        let mods = event.modifiers;
+        match crate::app::right_command::capture_edge() {
+            Some(true) => self.right_command_pending = mods == Modifiers::command(),
+            Some(false) if self.right_command_pending && mods == Modifiers::default() => {
+                self.send(Command::SetShortcut(
+                    crate::app::right_command::SHORTCUT.into(),
+                ));
+                self.end_capture(cx);
+            }
+            _ => self.right_command_pending = false,
         }
     }
 
@@ -278,6 +303,7 @@ impl Settings {
         }
         window.prevent_default();
         cx.stop_propagation();
+        self.right_command_pending = false;
         let key = &event.keystroke.key;
         if key == "escape" {
             self.end_capture(cx);
@@ -515,6 +541,7 @@ impl Render for Settings {
             .size_full()
             .track_focus(&self.focus)
             .capture_key_down(cx.listener(Self::hotkey_input))
+            .on_modifiers_changed(cx.listener(Self::modifier_input))
             .flex()
             .flex_col()
             .bg(p.paper)

@@ -1,9 +1,16 @@
+pub(crate) mod right_command;
+
 use global_hotkey::{
-    GlobalHotKeyManager,
+    GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
     hotkey::{Code, HotKey, Modifiers},
 };
+use std::sync::Arc;
+
+pub(super) type NotifyKey = Arc<dyn Fn(GlobalHotKeyEvent) + Send + Sync>;
 
 pub(super) struct Shortcuts {
+    notify: NotifyKey,
+    right_command: Option<right_command::RightCommandMonitor>,
     manager: GlobalHotKeyManager,
     pub dictation: Option<HotKey>,
     cancel_keys: Vec<HotKey>,
@@ -11,10 +18,12 @@ pub(super) struct Shortcuts {
 }
 
 impl Shortcuts {
-    pub fn new() -> Result<Self, String> {
+    pub fn new(notify: NotifyKey) -> Result<Self, String> {
         Ok(Self {
             manager: GlobalHotKeyManager::new().map_err(|e| e.to_string())?,
             dictation: None,
+            notify,
+            right_command: None,
             cancel_keys: Vec::new(),
             listening: false,
         })
@@ -22,9 +31,11 @@ impl Shortcuts {
 
     pub fn set(&mut self, shortcut: &str) -> Result<(), String> {
         let next = shortcut.parse::<HotKey>().map_err(|e| e.to_string())?;
-        if !next
-            .mods
-            .intersects(Modifiers::ALT | Modifiers::CONTROL | Modifiers::META)
+        let bare_command = shortcut == right_command::SHORTCUT;
+        if !bare_command
+            && !next
+                .mods
+                .intersects(Modifiers::ALT | Modifiers::CONTROL | Modifiers::META)
         {
             return Err("Добавьте ⌥, ⌘ или ⌃ к сочетанию.".into());
         }
@@ -34,22 +45,40 @@ impl Shortcuts {
         if self.dictation == Some(next) {
             return Ok(());
         }
-        self.manager
-            .register(next)
-            .map_err(|e| format!("Не удалось назначить {shortcut}: {e}"))?;
-        if let Some(previous) = self.dictation
-            && let Err(e) = self.manager.unregister(previous)
-        {
-            let _ = self.manager.unregister(next);
-            return Err(e.to_string());
+        let monitor = if bare_command {
+            let notify = self.notify.clone();
+            Some(right_command::RightCommandMonitor::new(move |down| {
+                notify(GlobalHotKeyEvent {
+                    id: next.id(),
+                    state: if down {
+                        HotKeyState::Pressed
+                    } else {
+                        HotKeyState::Released
+                    },
+                })
+            })?)
+        } else {
+            self.manager
+                .register(next)
+                .map_err(|e| format!("Не удалось назначить {shortcut}: {e}"))?;
+            None
+        };
+        if let Err(error) = self.suspend() {
+            if monitor.is_none() {
+                let _ = self.manager.unregister(next);
+            }
+            return Err(error);
         }
+        self.right_command = monitor;
         self.dictation = Some(next);
         Ok(())
     }
 
     pub fn suspend(&mut self) -> Result<(), String> {
         if let Some(key) = self.dictation {
-            self.manager.unregister(key).map_err(|e| e.to_string())?;
+            if self.right_command.take().is_none() {
+                self.manager.unregister(key).map_err(|e| e.to_string())?;
+            }
             self.dictation = None;
         }
         Ok(())
@@ -62,9 +91,14 @@ impl Shortcuts {
         self.listening = enabled;
         if enabled {
             let escape = HotKey::new(None, Code::Escape);
-            let held = self
-                .dictation
-                .map(|key| HotKey::new(Some(key.mods), Code::Escape));
+            let held = self.dictation.map(|key| {
+                let mods = if self.right_command.is_some() {
+                    Modifiers::META
+                } else {
+                    key.mods
+                };
+                HotKey::new(Some(mods), Code::Escape)
+            });
             for key in std::iter::once(escape).chain(held) {
                 if self.manager.register(key).is_ok() {
                     self.cancel_keys.push(key);

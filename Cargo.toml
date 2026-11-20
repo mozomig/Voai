@@ -21,7 +21,7 @@ tempfile = "3"
 fs2 = "0.4"
 objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["std", "AVMediaFormat", "AVCaptureDevice", "block2"] }
 block2 = "0.6"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSWorkspace", "NSRunningApplication", "NSAppearance", "NSApplication", "NSPanel", "NSWindow", "NSView", "NSResponder", "libc"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSEvent", "block2", "NSWorkspace", "NSRunningApplication", "NSAppearance", "NSApplication", "NSPanel", "NSWindow", "NSView", "NSResponder", "libc"] }
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGDirectDisplay", "CGError", "CGEvent", "CGEventTypes", "CGEventSource", "CGRemoteOperation", "libc"] }
 voai-models = { path = "crates/voai-models" }
 voai-speech = { path = "crates/voai-speech" }
@@ -35,7 +35,7 @@ members = ["crates/voai-models", "crates/voai-speech", "crates/voai-text-helper"
 default-members = ["."]
 
 [workspace.package]
-version = "1.0.1"
+version = "1.0.2"
 edition = "2024"
 
 [profile.dev]

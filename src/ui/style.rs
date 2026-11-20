@@ -153,6 +153,9 @@ pub fn bytes(size: u64) -> String {
 }
 
 pub fn shortcut_label(value: &str) -> String {
+    if value == crate::app::right_command::SHORTCUT {
+        return "Правый ⌘".into();
+    }
     value
         .split('+')
         .map(|part| match part.to_ascii_lowercase().as_str() {

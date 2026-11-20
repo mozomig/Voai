@@ -10,7 +10,8 @@ use crate::macos;
 use connections::Connections;
 use downloads::Downloads;
 use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
-use hotkeys::Shortcuts;
+pub(crate) use hotkeys::right_command;
+use hotkeys::{NotifyKey, Shortcuts};
 use session::{Destination, Session, provider};
 use settings::Settings;
 use std::{
@@ -29,6 +30,7 @@ pub struct Backend {
     connections: Connections,
     shortcuts: Option<Shortcuts>,
     init_keys: bool,
+    notify_key: NotifyKey,
     held: bool,
     key_events: std::sync::mpsc::Receiver<GlobalHotKeyEvent>,
     wake: async_channel::Receiver<()>,
@@ -76,11 +78,13 @@ impl Backend {
         let mut connections = Connections::default();
         connections.refresh(&settings.local_models, notify.clone());
         let notify_hotkey = notify.clone();
-        GlobalHotKeyEvent::set_event_handler(Some(move |event| {
+        let notify_key: NotifyKey = std::sync::Arc::new(move |event| {
             if key_sender.send(event).is_ok() {
                 let _ = notify_hotkey.try_send(());
             }
-        }));
+        });
+        let carbon = notify_key.clone();
+        GlobalHotKeyEvent::set_event_handler(Some(move |event| carbon(event)));
         let mut server = server::ServerDiscovery::default();
         if settings.mode == Mode::Server {
             server.request(settings.server_url.clone(), &notify);
@@ -94,6 +98,7 @@ impl Backend {
             connections,
             shortcuts: None,
             init_keys: true,
+            notify_key,
             held: false,
             key_events,
             wake,
@@ -394,7 +399,7 @@ impl Backend {
     pub fn tick(&mut self) {
         if self.init_keys {
             self.init_keys = false;
-            match Shortcuts::new() {
+            match Shortcuts::new(self.notify_key.clone()) {
                 Ok(mut keys) => {
                     if let Err(e) = keys.set(&self.settings.shortcut) {
                         self.message = e;
@@ -435,7 +440,7 @@ impl Backend {
                         }
                     }
                 }
-                HotKeyState::Released => {
+                HotKeyState::Released if self.held => {
                     self.held = false;
                     self.session.finish();
                 }
