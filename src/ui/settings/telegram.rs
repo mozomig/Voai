@@ -53,25 +53,34 @@ impl Settings {
 
     fn telegram_network(&self, p: Palette, cx: &Context<Self>) -> Div {
         let bot = &self.snapshot.telegram;
-        let label = bot.proxy_port.map_or_else(
-            || "Системные настройки macOS".to_owned(),
-            |port| format!("SOCKS5 · 127.0.0.1:{port}"),
+        let title = match (self.telegram_network_open, bot.proxy_port) {
+            (true, _) => "Скрыть настройки сети".to_owned(),
+            (false, Some(port)) => format!("Локальный прокси · 127.0.0.1:{port}"),
+            (false, None) => "Настройки сети…".to_owned(),
+        };
+        let mut section = col().child(
+            row().child(
+                Button::new("telegram-network")
+                    .ghost()
+                    .small()
+                    .label(title)
+                    .disabled(bot.enabled && !bot.route_ready)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.telegram_network_open = !this.telegram_network_open;
+                        if this.telegram_network_open {
+                            let port = this.snapshot.telegram.proxy_port;
+                            this.telegram_port.update(cx, |input, cx| {
+                                input.set_value(
+                                    port.map(|p| p.to_string()).unwrap_or_default(),
+                                    window,
+                                    cx,
+                                )
+                            });
+                        }
+                        cx.notify();
+                    })),
+            ),
         );
-        let mut section = col().child(Self::setting(
-            p,
-            "Подключение",
-            &label,
-            button("telegram-network", "Изменить", p)
-                .disabled(bot.enabled && !bot.route_ready)
-                .on_click(cx.listener(|this, _, window, cx| {
-                    this.telegram_network_open = !this.telegram_network_open;
-                    let port = this.snapshot.telegram.proxy_port.map_or(10808, |p| p.get());
-                    this.telegram_port.update(cx, |input, cx| {
-                        input.set_value(port.to_string(), window, cx)
-                    });
-                    cx.notify();
-                })),
-        ));
         if self.telegram_network_open {
             let valid = self
                 .telegram_port
@@ -84,7 +93,7 @@ impl Settings {
                 col()
                     .gap_2()
                     .child(text(
-                        "Порт локального SOCKS5-прокси на 127.0.0.1",
+                        "По умолчанию Voai использует сеть macOS и активный VPN. Для локального SOCKS5 укажите порт на 127.0.0.1.",
                         12.,
                         p.muted,
                     ))
@@ -128,7 +137,6 @@ impl Settings {
                 13.,
                 p.muted,
             ))
-            .child(self.telegram_network(p,cx))
             .child(if self.snapshot.telegram.enabled {
                 self.telegram_connection(p, cx)
             } else {
@@ -139,6 +147,7 @@ impl Settings {
                 12.,
                 p.muted,
             ).mt_2())
+            .child(self.telegram_network(p, cx))
     }
 
     fn telegram_setup(&self, p: Palette, cx: &Context<Self>) -> Div {

@@ -61,12 +61,18 @@ fn pairs_once_and_replies_to_forwarded_video_only_for_the_owner() {
         let mut replies = Vec::new();
         let mut downloads = 0;
         let mut media_requests = 0;
+        let mut identity_attempts = 0;
         for req in listener.incoming() {
             let mut socket = req.unwrap();
             let (path, body) = request(&socket);
             let mut status = 200;
             let data = match path.rsplit('/').next().unwrap() {
                 "getMe" => {
+                    identity_attempts += 1;
+                    if identity_attempts == 1 {
+                        write!(socket, "HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 0\r\n\r\n").unwrap();
+                        continue;
+                    }
                     json!({"ok":true,"result":{"id":123456,"is_bot":true,"username":"sample_bot"}})
                         .to_string()
                 }
@@ -121,6 +127,7 @@ fn pairs_once_and_replies_to_forwarded_video_only_for_the_owner() {
                 break;
             }
         }
+        assert_eq!(identity_attempts, 2);
         assert_eq!(downloads, 3);
         assert_eq!(media_requests, 2);
         assert_eq!(replies.len(), 2);
@@ -145,6 +152,7 @@ fn pairs_once_and_replies_to_forwarded_video_only_for_the_owner() {
         })
     });
 
+    let mut reported_outage = false;
     loop {
         let event = match rx.recv_timeout(Duration::from_secs(8)) {
             Ok(event) => event,
@@ -153,13 +161,21 @@ fn pairs_once_and_replies_to_forwarded_video_only_for_the_owner() {
                 panic!("Bot timed out waiting for the mock Telegram server")
             }
         };
-        if let Event::Identity { link, .. } = event {
-            link_tx.send(link.unwrap()).unwrap();
+        match event {
+            Event::Status(message) if message.contains("502") => reported_outage = true,
+            Event::Identity { link, .. } => {
+                link_tx.send(link.unwrap()).unwrap();
+            }
+            _ => {}
         }
     }
     assert!(worker.join().unwrap().is_err());
     fake.join().unwrap();
     let state = State::load(&path).unwrap().unwrap();
+    assert!(
+        reported_outage,
+        "missing Telegram server error during automatic recovery"
+    );
     assert!(state.pending.is_none());
     assert_eq!(state.owner, Some(88));
     assert_eq!(state.offset(state::now()), 5);

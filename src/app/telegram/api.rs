@@ -68,7 +68,9 @@ impl fmt::Display for Error {
             Self::Rejected(403) => "Telegram запретил доступ.",
             Self::Rejected(409) => "У бота включён webhook или он уже запущен в другом приложении.",
             Self::RateLimited(_) => "Слишком много запросов к Telegram.",
-            Self::Rejected(500..=599) => "Сервис Telegram временно недоступен.",
+            Self::Rejected(code @ 500..=599) => {
+                return write!(f, "Сбой на стороне Telegram (HTTP {code}).");
+            }
             Self::Rejected(_) => "Telegram отклонил запрос.",
             Self::TooLarge => {
                 "Бот может скачать файл размером до 20 МБ. Большие файлы откройте в Voai на Mac."
@@ -166,6 +168,9 @@ impl Api {
                 Error::TooLarge => Error::InvalidResponse,
                 other => other,
             })?;
+        if (500..600).contains(&response.status) {
+            return Err(Error::Rejected(response.status));
+        }
         let success = (200..300).contains(&response.status);
         let mut body: Value = serde_json::from_slice(&bytes).map_err(|_| {
             if success {

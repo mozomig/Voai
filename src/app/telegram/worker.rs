@@ -47,8 +47,9 @@ fn connected<T>(
             }
             Err(error) if error.fatal() => return Err(error.to_string()),
             Err(error) => {
-                signals.status(format!("{error} Повторю подключение."))?;
-                wait(signals, delay.max(error.retry_delay()))?;
+                let retry_in = delay.max(error.retry_delay());
+                signals.status(format!("{error} Повторю через {} с.", retry_in.as_secs()))?;
+                wait(signals, retry_in)?;
                 delay = (delay * 2).min(Duration::from_secs(60));
             }
         }
