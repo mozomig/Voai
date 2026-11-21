@@ -1,0 +1,19 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+app="$HOME/Library/Input Methods/Voai Input Probe.app"
+identity=$(git config --local --get voai.signingIdentity)
+stage=$(mktemp -d)
+trap 'rm -rf "$stage"' EXIT
+bundle="$stage/Voai Input Probe.app"
+mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
+xcrun clang -fobjc-arc -framework Cocoa -framework Carbon -framework InputMethodKit experiments/input-method/Probe.m -o "$bundle/Contents/MacOS/Probe"
+cp packaging/Voai.icns "$bundle/Contents/Resources/"
+python3 - "$bundle/Contents/Info.plist" <<'PY'
+import plistlib,sys
+with open(sys.argv[1],'wb') as f:
+    plistlib.dump(dict(CFBundleIdentifier='app.voai.inputmethod.probe',CFBundleName='Voai Input Probe',CFBundleExecutable='Probe',CFBundlePackageType='APPL',CFBundleVersion='1',CFBundleIconFile='Voai.icns',LSBackgroundOnly=True,NSPrincipalClass='NSApplication',InputMethodConnectionName='app.voai.inputmethod.probe_Connection',InputMethodServerControllerClass='VoaiProbeController',TISInputSourceID='app.voai.inputmethod.probe',TISIntendedLanguage='en',tsInputMethodCharacterRepertoireKey=['Latn'],tsInputMethodIconFileKey='Voai.icns'),f)
+PY
+codesign --force --sign "$identity" "$bundle"
+ditto "$bundle" "$app"
+"$app/Contents/MacOS/Probe" register
