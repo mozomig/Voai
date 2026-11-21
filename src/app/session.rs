@@ -19,6 +19,7 @@ use voai_speech::{Event, Recording};
 
 pub(super) enum Destination {
     Field(macos::Destination),
+    Deferred(String),
     Test,
 }
 
@@ -76,7 +77,7 @@ impl Session {
     pub fn widget_anchor(&self) -> Option<objc2_core_foundation::CGRect> {
         match self.target.as_ref()? {
             Destination::Field(field) => field.widget_anchor,
-            Destination::Test => None,
+            Destination::Test | Destination::Deferred(_) => None,
         }
     }
 
@@ -165,6 +166,7 @@ impl Session {
                 self.result = Some((self.id, text));
                 return;
             }
+            Some(Destination::Deferred(reason)) => Err(InsertionError::Unavailable(reason)),
             _ => Err(InsertionError::TargetChanged),
         };
         match outcome {
@@ -369,6 +371,23 @@ mod tests {
         assert!(session.phase == Phase::RecoverText && session.result.is_none());
         session.use_original(true);
         assert_eq!(session.result.as_ref().unwrap().1, "исходный текст");
+    }
+
+    #[test]
+    fn dictation_without_initial_target_waits_for_explicit_retarget() {
+        let mut session = Session {
+            text: "готовый текст".into(),
+            target: Some(Destination::Deferred("Выберите поле".into())),
+            ..Session::default()
+        };
+        session.deliver(true);
+        assert!(session.phase == Phase::RecoverFocus);
+        assert!(session.result.is_none());
+        assert_eq!(session.text, "готовый текст");
+        session.retarget(Destination::Test, true);
+        session.finish(); // Release of the same shortcut must not start another delivery.
+        assert!(session.phase == Phase::Idle);
+        assert_eq!(session.result.unwrap().1, "готовый текст");
     }
 
     #[test]

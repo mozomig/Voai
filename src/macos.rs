@@ -109,6 +109,9 @@ fn capture(expected: Option<i32>) -> Result<Target, String> {
         Ok(_) | Err(AXError::AttributeUnsupported | AXError::NoValue) => {}
         Err(error) => return Err(tf!("app.insertion.check_field", code = error.0)),
     }
+    if attribute::<CFString>(&field, "AXRole").is_ok_and(|role| role.to_string() == "AXWindow") {
+        return Err(tr("app.insertion.window_only").into());
+    }
     let window = required(&field, "AXWindow")?;
     let mut writable = 0;
     let status = unsafe {

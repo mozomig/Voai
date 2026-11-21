@@ -85,7 +85,7 @@ fn recorded_speech_reaches_test_field() {
             settings.noise_suppression,
         )
         .unwrap();
-        session.begin(&settings, Destination::Test, recording);
+        session.begin(&settings, Destination::Deferred(String::new()), recording);
         eof
     };
 
@@ -111,7 +111,9 @@ fn recorded_speech_reaches_test_field() {
     tick_until(&mut session, &store, |s| s.phase == Phase::Editing);
     println!("Final transcript {:?} after release", released.elapsed());
     assert_phrase_boundaries(&session.text);
-    let entry = tick_until(&mut session, &store, |s| s.result.is_some()).unwrap();
+    let entry = tick_until(&mut session, &store, |s| s.phase == Phase::RecoverFocus).unwrap();
+    assert!(session.result.is_none());
+    session.retarget(Destination::Test, true);
     assert_phrase_boundaries(&entry.original);
     assert!(!entry.audio.is_empty());
     assert!(session.phase == Phase::Idle);

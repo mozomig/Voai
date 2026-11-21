@@ -32,6 +32,9 @@ app.dictation.mic_permission:
 app.dictation.recording_interrupted:
   en: "Recording stopped. Start dictating again."
   ru: "Запись прервалась. Начните диктовку заново."
+app.insertion.window_only:
+  en: "Only the window is visible to Voai. Copy the text or choose another field."
+  ru: "Voai видит только окно. Скопируйте текст или выберите другое поле."
 app.dictation.target_changed:
   en: "The text field or selection changed."
   ru: "Поле или выделение изменилось."

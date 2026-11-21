@@ -473,14 +473,15 @@ impl Backend {
         self.files.stop();
         let own_window = macos::app_frontmost();
         let target = if own_window && self.test_focus {
-            Destination::Test
+            Ok(Destination::Test)
         } else if own_window {
-            return Err(tr("app.dictation.focus_field").into());
+            Err(tr("app.dictation.focus_field").into())
         } else {
-            Destination::Field(macos::Destination::capture(self.settings.compact_widget)?)
+            macos::Destination::capture(self.settings.compact_widget).map(Destination::Field)
         };
         if recovering {
-            self.session.retarget(target, own_window && self.test_focus);
+            self.session
+                .retarget(target?, own_window && self.test_focus);
             return Ok(());
         }
         if !macos::microphone_allowed() {
@@ -489,7 +490,11 @@ impl Backend {
         let path = self
             .settings
             .selected_path(&self.downloads.store, voai_models::ModelKind::Speech)?;
-        self.session.start(&self.settings, target, path)
+        self.session.start(
+            &self.settings,
+            target.unwrap_or_else(Destination::Deferred),
+            path,
+        )
     }
 
     pub fn tick(&mut self) {

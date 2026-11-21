@@ -26,6 +26,8 @@ Leave the executable path empty for automatic detection or enter the full path r
 
 Voai uses macOS Accessibility and Unicode events to insert text while preserving the clipboard. If the field or selection changes before insertion, the text stays in the panel. Password fields are excluded. Some editors expose less information about the cursor and selection than others.
 
+You can start dictating before choosing a field. When the transcript is ready, click a text field and press the dictation shortcut once to insert it. If Voai still cannot identify the field, the transcript stays in the panel for another attempt or for copying.
+
 If Voai cannot locate the cursor in VS Code, set **Editor: Accessibility Support** to `on`. To restore automatic detection, set it back to `auto`. [VS Code accessibility settings](https://code.visualstudio.com/docs/configure/accessibility/accessibility#_screen-reader-mode)
 
 ## History
