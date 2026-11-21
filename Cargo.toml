@@ -2,6 +2,7 @@
 name = "voai"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 publish = false
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -53,6 +54,7 @@ default-members = ["."]
 [workspace.package]
 version = "1.9.1"
 edition = "2024"
+license = "MIT"
 
 [profile.dev]
 debug = 1
