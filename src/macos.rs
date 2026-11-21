@@ -365,7 +365,14 @@ impl Destination {
                             &CFString::from_str(text),
                         )
                     };
-                    return check(status, tr("app.insertion.ax_write"));
+                    match status {
+                        AXError::Failure | AXError::CannotComplete => {
+                            // A setter can change the field and still report a failure.
+                            receipt = Some(Receipt::new(target, text)?);
+                            return Ok(());
+                        }
+                        _ => return check(status, tr("app.insertion.ax_write")),
+                    }
                 }
                 type_unicode(target, text)?;
                 receipt = Some(Receipt::new(target, text)?);
@@ -419,6 +426,7 @@ pub struct Receipt {
     range: CFRange,
     parameter: CFRetained<AXValue>,
     expected: CFRetained<CFString>,
+    require_caret: bool,
     deadline: Instant,
 }
 
@@ -436,6 +444,7 @@ impl Receipt {
             range,
             parameter,
             expected,
+            require_caret: target.direct_write,
             // Electron can update the document well before it publishes the new
             // accessible range. Return as soon as the edit is visible.
             deadline: Instant::now() + Duration::from_secs(4),
@@ -451,36 +460,44 @@ impl Receipt {
                 (&mut raw).into(),
             )
         };
-        if status == AXError::Success
+        let range_matches = if status == AXError::Success
             && let Some(ptr) = NonNull::new(raw.cast_mut())
         {
             let value = unsafe { CFRetained::<CFType>::from_raw(ptr) };
-            if value
+            value
                 .downcast::<CFString>()
                 .is_ok_and(|actual| actual == self.expected)
-            {
-                return Some(Ok(()));
-            }
+        } else {
+            false
+        };
+        if range_matches && !self.require_caret {
+            return Some(Ok(()));
         }
-        // Some editors expose only AXValue. Require both the expected caret
-        // and an exact match within the inserted range.
+        // A rejected AX write can leave identical pre-existing text at the
+        // insertion point. Also require the caret to have advanced past it.
         if let Some(end) = self.range.location.checked_add(self.range.length)
             && selected_range(&self.field)
                 .is_ok_and(|caret| caret.location == end && caret.length == 0)
-            && let Ok(value) = attribute::<CFString>(&self.field, "AXValue")
-            && value.length() >= end
         {
-            use objc2_core_foundation::{CFComparisonResult, CFStringCompareFlags};
-            // The checked bounds describe a valid range in the captured field.
-            if unsafe {
-                value.compare_with_options(
-                    Some(&self.expected),
-                    self.range,
-                    CFStringCompareFlags(0),
-                )
-            } == CFComparisonResult::CompareEqualTo
-            {
+            if range_matches {
                 return Some(Ok(()));
+            }
+            // Some editors expose only AXValue.
+            if let Ok(value) = attribute::<CFString>(&self.field, "AXValue")
+                && value.length() >= end
+            {
+                use objc2_core_foundation::{CFComparisonResult, CFStringCompareFlags};
+                // The checked bounds describe a valid range in the captured field.
+                if unsafe {
+                    value.compare_with_options(
+                        Some(&self.expected),
+                        self.range,
+                        CFStringCompareFlags(0),
+                    )
+                } == CFComparisonResult::CompareEqualTo
+                {
+                    return Some(Ok(()));
+                }
             }
         }
         (status == AXError::InvalidUIElement || Instant::now() >= self.deadline)

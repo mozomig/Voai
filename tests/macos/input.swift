@@ -12,7 +12,24 @@ let window = NSWindow(
   contentRect: NSRect(x: 0, y: 0, width: 470, height: 185),
   styleMask: [.titled, .closable], backing: .buffered, defer: false)
 window.title = "Voai — проверка прямого ввода"
-let first = NSTextView(frame: NSRect(x: 10, y: 100, width: 450, height: 65))
+class FixtureEditor: NSTextView {
+  enum Reply { case normal, late, failAfterWrite, failWithoutWrite }
+  var reply = Reply.normal
+  var writes = 0
+
+  override func setAccessibilitySelectedText(_ text: String?) {
+    writes += 1
+    if reply != .failWithoutWrite { super.setAccessibilitySelectedText(text) }
+    switch reply {
+    case .late: Thread.sleep(forTimeInterval: 0.85)
+    case .failAfterWrite, .failWithoutWrite:
+      // AppKit translates an exception in the AX setter into kAXErrorFailure.
+      NSException(name: .internalInconsistencyException, reason: "AX fixture", userInfo: nil).raise()
+    case .normal: break
+    }
+  }
+}
+let first = FixtureEditor(frame: NSRect(x: 10, y: 100, width: 450, height: 65))
 let second = NSTextView(frame: NSRect(x: 10, y: 48, width: 450, height: 44))
 let password = NSSecureTextField(frame: NSRect(x: 10, y: 10, width: 450, height: 28))
 [first, second, password].forEach { window.contentView?.addSubview($0) }
@@ -98,6 +115,24 @@ Task { @MainActor in
     let replacement = try await runProbe("replace")
     expect(
       replacement == 0 && first.string == "до Тест Voai 🎙 после", "Unicode selection replacement")
+    for reply in [FixtureEditor.Reply.failAfterWrite, .late] {
+      await prepare()
+      first.reply = reply
+      let writesBefore = first.writes
+      let status = try await runProbe("AX \(reply)")
+      expect(first.string == "до Тест Voai 🎙 после", "replacement was committed")
+      expect(first.writes == writesBefore + 1, "attempted a single write")
+      expect(status == 0, "verified replacement despite AX \(reply)")
+    }
+    await prepare()
+    first.string = "Тест Voai 🎙"
+    first.setSelectedRange(NSRange(location: 0, length: 0))
+    first.reply = .failWithoutWrite
+    let writesBefore = first.writes
+    let unchanged = try await runProbe("unchanged matching text")
+    expect(unchanged != 0 && first.string == "Тест Voai 🎙", "existing text did not confirm insertion")
+    expect(first.writes == writesBefore + 1, "unconfirmed write was not retried")
+    first.reply = .normal
     await prepare()
     let changed = try await runProbe("focus") { window.makeFirstResponder(second) }
     expect(
