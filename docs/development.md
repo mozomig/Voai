@@ -1,6 +1,6 @@
 # Building and releasing Voai
 
-Voai uses Rust 2024 and GPUI. The main process owns the settings window, floating dictation panel and macOS integration. Speech recognition and local text editing run in bundled helpers. [Architecture](../ARCHITECTURE.md) · [Original interface prototype](../design/index.html)
+Voai uses Rust 2024 and GPUI. The main process owns the settings window, floating dictation panel and macOS integration. Speech recognition and local text editing run in bundled helpers. [Architecture](../ARCHITECTURE.md)
 
 Run the commands below from the repository root.
 

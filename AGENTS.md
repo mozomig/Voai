@@ -1,6 +1,6 @@
 # Voai
 
-Voai is a macOS dictation application. Use Rust edition 2024 and the workspace lockfile. The native settings and floating panel are implemented in GPUI. The 1.0 interface uses the GitHub Dark palette and compact controls. design/index.html records the original 0.1 prototype.
+Voai is a macOS dictation application. Use Rust edition 2024 and the workspace lockfile. The native settings and floating panel are implemented in GPUI. The 1.0 interface uses the GitHub Dark palette and compact controls.
 
 - Keep session transitions in src/app/session.rs. UI code dispatches commands and renders snapshots. Each session owns its worker responses. Cancelling a session must invalidate pending results.
 - Keep macOS Accessibility writes in src/macos.rs. Recheck the field, window and selection before delivery. Automatic insertion must preserve the clipboard, never send Return, and never retry an ambiguous write. The Copy buttons in history and the dictation panel write to the clipboard only on an explicit user action.
