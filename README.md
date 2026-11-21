@@ -38,4 +38,8 @@ open target/dist/release/Voai.app
 
 The quick start walks you through microphone and Accessibility permissions, then opens the speech model picker. Try a phrase in the test field before switching to your editor. Voai follows your Mac's preferred language and lets you select English or Russian in settings. You can choose the language you dictate in separately.
 
-[User guide](docs/usage.md) · [Build and release](docs/development.md) · [Architecture](ARCHITECTURE.md) · [Releases](https://github.com/mozomig/Voai/releases)
+[Website](https://mozomig.github.io/Voai/) · [User guide](docs/usage.md) · [Build and release](docs/development.md) · [Architecture](ARCHITECTURE.md) · [Releases](https://github.com/mozomig/Voai/releases)
+
+## License
+
+Voai is free and open source under the [MIT license](LICENSE). Bundled third-party components keep their own licenses, listed in `packaging/licenses`.

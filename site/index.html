@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voai — Local dictation and transcription for Mac</title>
+<meta name="description" content="Hold ⌥ Space and speak. Voai transcribes on your Mac and types at the cursor without touching the clipboard. Free and open source.">
+<meta name="theme-color" content="#0b1220">
+<meta property="og:title" content="Voai — Local dictation and transcription for Mac">
+<meta property="og:description" content="Hold ⌥ Space and speak. Speech recognition runs on your Mac. Free and open source.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mozomig.github.io/Voai/">
+<meta property="og:image" content="https://mozomig.github.io/Voai/assets/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/icon.png">
+<style>
+:root {
+  --bg: #0b1220;
+  --code: #070c16;
+  --fg: #e8edf5;
+  --mute: #8a96a8;
+  --line: #1e2a3d;
+  --line-strong: #2c3a52;
+  --blue: #58a6ff;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+.page { max-width: 1040px; margin: 0 auto; padding: 0 32px; }
+
+/* Header */
+.top { display: flex; align-items: center; gap: 16px; padding: 56px 0 40px; }
+.top img { width: 60px; height: 60px; flex: none; }
+.top h1 { font-size: 24px; line-height: 1.2; margin: 0; font-weight: 600; }
+.top .tagline { color: var(--mute); font-size: 15px; margin: 2px 0 0; }
+.get { margin-left: auto; text-align: right; }
+.buttons { display: flex; gap: 8px; justify-content: flex-end; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 42px; padding: 0 18px; border-radius: 9px;
+  font-weight: 600; font-size: 15px; text-decoration: none; white-space: nowrap;
+}
+.btn.primary { background: var(--fg); color: var(--bg); }
+.btn.primary:hover { background: #fff; }
+.btn.secondary { border: 1px solid var(--line-strong); }
+.btn.secondary:hover { border-color: var(--mute); }
+.get small { display: block; color: var(--mute); font-size: 13px; margin-top: 8px; }
+
+/* Screenshot */
+.shot { display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); }
+
+/* Specs */
+.specs { display: grid; grid-template-columns: repeat(3, 1fr); margin: 48px 0 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.specs > div { padding: 28px 28px 28px 0; }
+.specs > div + div { padding-left: 28px; border-left: 1px solid var(--line); }
+dt { color: var(--mute); font-size: 13px; margin: 0 0 2px; }
+dd { margin: 0 0 18px; font-size: 15px; }
+dd:last-child { margin: 0; }
+
+/* Open source */
+.free { display: grid; grid-template-columns: 1fr 1.25fr; gap: 40px; align-items: center; padding: 48px 0; border-bottom: 1px solid var(--line); }
+.free h2 { font-size: 26px; line-height: 1.2; letter-spacing: -0.01em; margin: 0 0 10px; font-weight: 600; }
+.free p { margin: 0; color: var(--mute); }
+.free p a { color: var(--blue); text-decoration: none; }
+.free p a:hover { text-decoration: underline; }
+pre {
+  margin: 0; padding: 16px 18px; overflow-x: auto;
+  background: var(--code); border: 1px solid var(--line); border-radius: 10px;
+  font: 13px/1.75 ui-monospace, "SF Mono", Menlo, monospace; color: #c9d4e3;
+}
+pre .c { color: var(--mute); }
+
+/* Releases */
+.releases { padding: 40px 0 24px; }
+.releases h2 { font-size: 13px; color: var(--mute); font-weight: 500; margin: 0 0 8px; }
+.release {
+  display: grid; grid-template-columns: 80px 1fr auto; gap: 16px; align-items: baseline;
+  padding: 12px 0; border-top: 1px solid var(--line); text-decoration: none; font-size: 15px;
+}
+.release:first-of-type { border-top: 0; }
+.release .v { color: var(--blue); font-variant-numeric: tabular-nums; }
+.release .d { color: var(--mute); font-size: 14px; white-space: nowrap; }
+.release:hover .t { text-decoration: underline; text-decoration-color: var(--line-strong); }
+.all { display: inline-block; margin-top: 12px; color: var(--mute); font-size: 14px; text-decoration: none; }
+.all:hover { color: var(--fg); }
+
+footer { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 24px 0 48px; border-top: 1px solid var(--line); color: var(--mute); font-size: 14px; }
+footer a { text-decoration: none; }
+footer a:hover { color: var(--fg); }
+footer span { margin-left: auto; }
+
+/* Phones and narrow windows */
+@media (max-width: 760px) {
+  .page { padding: 0 16px; }
+  .top { flex-wrap: wrap; padding: 32px 0 28px; }
+  .top img { width: 52px; height: 52px; }
+  .get { margin: 8px 0 0; width: 100%; text-align: left; }
+  .buttons { justify-content: stretch; }
+  .buttons .btn { flex: 1; }
+  .shot { border-radius: 8px; }
+  .specs { grid-template-columns: 1fr; margin-top: 32px; }
+  .specs > div, .specs > div + div { padding: 20px 0; border-left: 0; }
+  .specs > div + div { border-top: 1px solid var(--line); }
+  .free { grid-template-columns: 1fr; gap: 20px; padding: 36px 0; }
+  .free h2 { font-size: 22px; }
+  pre { font-size: 12px; }
+  .release { grid-template-columns: 1fr auto; gap: 2px 12px; }
+  .release .t { grid-column: 1 / -1; grid-row: 2; }
+  footer span { margin-left: 0; width: 100%; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="top">
+    <img src="assets/icon.png" alt="" width="60" height="60">
+    <div>
+      <h1>Voai</h1>
+      <p class="tagline">Local dictation and transcription for Mac</p>
+    </div>
+    <div class="get">
+      <div class="buttons">
+        <a class="btn primary" id="download" href="https://github.com/mozomig/Voai/releases/latest">Download <span id="download-version">1.9.1</span></a>
+        <a class="btn secondary" href="https://github.com/mozomig/Voai">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+      </div>
+      <small>Free · Open source · macOS 14+, Apple Silicon</small>
+    </div>
+  </header>
+
+  <img class="shot" src="assets/screenshot.jpg" width="1600" height="784" alt="Voai showing a transcript of a field recording with two speakers and timestamps">
+
+  <dl class="specs">
+    <div>
+      <dt>Dictation</dt><dd>Hold ⌥ Space or right ⌘ and speak</dd>
+      <dt>Insertion</dt><dd>At the cursor, without the clipboard</dd>
+    </div>
+    <div>
+      <dt>Speech models</dt><dd>Whisper, Parakeet TDT v3, GigaAM v3</dd>
+      <dt>Runs on</dt><dd>Your Mac’s GPU, offline</dd>
+    </div>
+    <div>
+      <dt>Editing, optional</dt><dd>Local GGUF, Ollama, LM Studio, OpenAI, Anthropic, Codex, Claude Code</dd>
+      <dt>Files</dt><dd>Speakers, timestamps, TXT, SRT</dd>
+    </div>
+  </dl>
+
+  <section class="free">
+    <div>
+      <h2>Free. Open source. Yours.</h2>
+      <p>No account, no subscription, no paid tier. Every line of Voai is on <a href="https://github.com/mozomig/Voai">GitHub</a> under the <a href="https://github.com/mozomig/Voai/blob/main/LICENSE">MIT license</a>. Read how insertion works, build it yourself, or send a fix.</p>
+    </div>
+    <pre><span class="c"># build it yourself</span>
+git clone https://github.com/mozomig/Voai
+cd Voai
+./scripts/package-macos</pre>
+  </section>
+
+  <section class="releases">
+    <h2>Releases</h2>
+    <div id="release-list">
+      <a class="release" href="https://github.com/mozomig/Voai/releases/tag/v1.9.1"><span class="v">1.9.1</span><span class="t">Permissions now survive updates</span><span class="d">Nov 22, 2026</span></a>
+      <a class="release" href="https://github.com/mozomig/Voai/releases/tag/v1.9.0"><span class="v">1.9.0</span><span class="t">Dictation in Zed and other editors</span><span class="d">Nov 21, 2026</span></a>
+      <a class="release" href="https://github.com/mozomig/Voai/releases/tag/v1.8.1"><span class="v">1.8.1</span><span class="t">Fixed a startup issue that could leave Voai running without a visible settings window after a Keychain prompt</span><span class="d">Nov 21, 2026</span></a>
+      <a class="release" href="https://github.com/mozomig/Voai/releases/tag/v1.8.0"><span class="v">1.8.0</span><span class="t">Edit dictations with Codex CLI or Claude Code using your existing login</span><span class="d">Nov 21, 2026</span></a>
+      <a class="release" href="https://github.com/mozomig/Voai/releases/tag/v1.7.0"><span class="v">1.7.0</span><span class="t">Choose GigaAM v3 for Russian dictation or Parakeet TDT v3 for speech in 25 European languages</span><span class="d">Nov 21, 2026</span></a>
+    </div>
+    <a class="all" href="https://github.com/mozomig/Voai/releases">All releases →</a>
+  </section>
+
+  <footer>
+    <a href="https://github.com/mozomig/Voai">github.com/mozomig/Voai</a>
+    <a href="https://github.com/mozomig/Voai/blob/main/docs/usage.md">User guide</a>
+    <a href="https://github.com/mozomig/Voai/issues">Report an issue</a>
+    <span>MIT license</span>
+  </footer>
+</main>
+
+<script>
+// Keep the download button and changelog current without rebuilding the page.
+// The static markup above stays in place if the GitHub API is unavailable.
+(async () => {
+  const repo = "mozomig/Voai";
+  const generic = /^(fixes|changes|what'?s new|improvements|first installation|notes?)$/i;
+  const clean = (s) => s.replace(/\*\*|__|`/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").trim();
+  const summary = (body) => {
+    const lines = (body || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const heading = lines.find((l) => l.startsWith("#"));
+    const title = heading && clean(heading.replace(/^#+\s*/, ""));
+    if (title && !generic.test(title)) return title;
+    const text = lines.find((l) => !l.startsWith("#"));
+    if (!text) return "";
+    const sentence = clean(text.replace(/^[-*]\s+|^\d+\.\s+/, "")).split(/(?<=\.)\s/)[0];
+    return sentence.replace(/\.$/, "");
+  };
+  const date = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const el = (tag, cls, text) => { const n = document.createElement(tag); n.className = cls; n.textContent = text; return n; };
+
+  try {
+    const response = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=6`, { headers: { Accept: "application/vnd.github+json" } });
+    if (!response.ok) return;
+    const releases = (await response.json()).filter((r) => !r.draft && !r.prerelease);
+    if (!releases.length) return;
+
+    const latest = releases[0];
+    const dmg = latest.assets.find((a) => a.name.endsWith(".dmg"));
+    if (dmg) {
+      document.getElementById("download").href = dmg.browser_download_url;
+      document.getElementById("download-version").textContent = latest.tag_name.replace(/^v/, "");
+    }
+
+    const list = document.getElementById("release-list");
+    const rows = releases.slice(0, 5).map((r) => {
+      const row = el("a", "release", "");
+      row.href = r.html_url;
+      row.append(el("span", "v", r.tag_name.replace(/^v/, "")), el("span", "t", summary(r.body) || r.name), el("span", "d", date(r.published_at)));
+      return row;
+    });
+    list.replaceChildren(...rows);
+  } catch (_) {
+    // Offline or rate-limited: keep the static content.
+  }
+})();
+</script>
+</body>
+</html>
