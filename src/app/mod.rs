@@ -1,8 +1,10 @@
 mod connections;
 mod diarization;
 mod downloads;
+mod editing;
+pub use editing::{EditorSource, ServiceModel};
 mod files;
-pub use files::{ExportFormat, FileCommand, FileDocument, FileProgress, FileView};
+pub use files::{ExportFormat, FileCommand, FileDocument, FileEditor, FileProgress, FileView};
 use voai_l10n::{tf, tr};
 mod history;
 mod hotkeys;
@@ -179,6 +181,10 @@ impl Backend {
             processing_prompt: s.processing_prompt.clone(),
             provider: s.provider.clone(),
             cloud_model: s.cloud_model.clone(),
+            agent_profiles: s.agent_profiles.clone(),
+            agent_config: voai_models::AgentCli::from_name(&s.provider)
+                .map(|agent| s.agent_profiles.get(agent).clone())
+                .unwrap_or_default(),
             server_url: s.server_url.clone(),
             server_model: s.server_model.clone(),
             server_models: self.server.models.clone(),
@@ -307,19 +313,30 @@ impl Backend {
             Command::SetProcessingPrompt(prompt) => next.set_processing_prompt(prompt)?,
             Command::ResetProcessingPrompt => next.reset_processing_prompt(),
             Command::SetProvider(name) => {
-                let p = provider(&name)?;
-                next.cloud_model = p
-                    .models()
-                    .first()
-                    .ok_or(tr("app.models.cloud_empty"))?
-                    .to_string();
+                if voai_models::AgentCli::from_name(&name).is_none() {
+                    next.cloud_model = provider(&name)?.models()[0].to_string();
+                }
                 next.provider = name;
             }
             Command::SetCloudModel(name) => {
-                if !provider(&next.provider)?.models().contains(&name.as_str()) {
-                    return Err(tr("app.models.cloud_unknown").into());
+                if let Some(agent) = voai_models::AgentCli::from_name(&next.provider) {
+                    let mut config = next.agent_profiles.get(agent).clone();
+                    config.model = name;
+                    config.validate(agent).map_err(|e| e.to_string())?;
+                    next.agent_profiles.set(agent, config);
+                } else {
+                    if !provider(&next.provider)?.models().contains(&name.as_str()) {
+                        return Err(tr("app.models.cloud_unknown").into());
+                    }
+                    next.cloud_model = name;
                 }
-                next.cloud_model = name;
+            }
+            Command::ConfigureAgent(agent, config) => {
+                if next.mode != Mode::Cloud || next.provider != agent.name() {
+                    return Err(tr("agent.provider_changed").into());
+                }
+                config.validate(agent).map_err(|e| e.to_string())?;
+                next.agent_profiles.set(agent, config);
             }
             Command::SaveKey(key) => {
                 let p = provider(&next.provider)?;
@@ -421,8 +438,11 @@ impl Backend {
         }
         self.message.clear();
         if refresh_key {
-            self.has_key = voai_models::has_api_key(provider(&self.settings.provider)?)
-                .map_err(|e| e.to_string())?;
+            self.has_key = match voai_models::AgentCli::from_name(&self.settings.provider) {
+                Some(_) => false,
+                None => voai_models::has_api_key(provider(&self.settings.provider)?)
+                    .map_err(|e| e.to_string())?,
+            };
         }
         Ok(())
     }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::app::{HistoryOutcome, Phase};
+use crate::ui::copy_text::CopyText;
 use chrono::{DateTime, Local};
 use voai_l10n::tr;
 
@@ -60,6 +61,11 @@ impl Settings {
             }
             let id = entry.id;
             let expanded = self.expanded_entry == Some(id);
+            let edited = match &entry.outcome {
+                HistoryOutcome::Edited(text) if text != &entry.original => Some(text.as_str()),
+                _ => None,
+            };
+            let result = edited.unwrap_or(&entry.original);
             let playing = history.playing == Some(id);
             let secs = entry.duration_ms.div_ceil(1000);
             let playback = button(
@@ -105,6 +111,15 @@ impl Settings {
                             p.muted,
                         ))
                         .child(div().flex_1())
+                        .child(CopyText::new(
+                            ("history-copy", id as u64),
+                            result,
+                            if edited.is_some() {
+                                tr("ui.history.copy_edited")
+                            } else {
+                                tr("ui.action.copy_text")
+                            },
+                        ))
                         .child(playback)
                         .child(
                             Button::new(("history-open", id as u64))
@@ -123,24 +138,33 @@ impl Settings {
                         ),
                 );
             if expanded {
-                let different =
-                    matches!(&entry.outcome, HistoryOutcome::Edited(s) if s != &entry.original);
                 card = card
-                    .child(text(
-                        if different {
-                            tr("ui.history.before")
-                        } else {
-                            tr("ui.page.transcription")
-                        },
-                        11.,
-                        p.muted,
-                    ))
+                    .child(
+                        row()
+                            .gap_1()
+                            .child(text(
+                                if edited.is_some() {
+                                    tr("ui.history.before")
+                                } else {
+                                    tr("ui.page.transcription")
+                                },
+                                11.,
+                                p.muted,
+                            ))
+                            .when(edited.is_some(), |r| {
+                                r.child(CopyText::new(
+                                    ("history-copy-original", id as u64),
+                                    &entry.original,
+                                    tr("ui.history.copy_original"),
+                                ))
+                            }),
+                    )
                     .child(text(entry.original.clone(), 14., p.ink));
                 card = match &entry.outcome {
-                    HistoryOutcome::Edited(edited) if different => card
+                    HistoryOutcome::Edited(text_after) if edited.is_some() => card
                         .child(div().h_px().bg(p.rule))
                         .child(text(tr("ui.history.after"), 11., p.accent))
-                        .child(text(edited.clone(), 14., p.ink)),
+                        .child(text(text_after.clone(), 14., p.ink)),
                     HistoryOutcome::Edited(_) => {
                         card.child(text(tr("ui.history.unchanged"), 12., p.muted))
                     }
@@ -183,11 +207,7 @@ impl Settings {
                         ),
                 );
             } else {
-                let preview = match &entry.outcome {
-                    HistoryOutcome::Edited(text) => text,
-                    _ => &entry.original,
-                };
-                let mut chars = preview.lines().next().unwrap_or("").chars();
+                let mut chars = result.lines().next().unwrap_or("").chars();
                 let mut excerpt: String = chars.by_ref().take(85).collect();
                 if chars.next().is_some() {
                     excerpt.push('…');

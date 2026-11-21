@@ -205,24 +205,38 @@ impl Session {
                         voai_models::process_local(&p, &settings.processing_prompt, &text, &cancel)
                             .map_err(|e| e.to_string())
                     }),
-                Mode::Server => voai_models::process_server(
-                    &settings.server_url,
-                    &settings.server_model,
+                Mode::Server => super::ServiceModel::Server {
+                    endpoint: settings.server_url.clone(),
+                    model: settings.server_model.clone(),
+                }
+                .edit(
+                    &settings.agent_profiles,
                     &settings.processing_prompt,
                     &text,
                     &cancel,
-                )
-                .map_err(|e| e.to_string()),
-                Mode::Cloud => provider(&settings.provider).and_then(|p| {
-                    voai_models::process_cloud(
-                        p,
-                        &settings.cloud_model,
-                        &settings.processing_prompt,
-                        &text,
-                        &cancel,
-                    )
-                    .map_err(|e| e.to_string())
-                }),
+                ),
+                Mode::Cloud => {
+                    let target =
+                        if let Some(agent) = voai_models::AgentCli::from_name(&settings.provider) {
+                            Ok(super::ServiceModel::Cli {
+                                agent,
+                                model: settings.agent_profiles.get(agent).model.clone(),
+                            })
+                        } else {
+                            provider(&settings.provider).map(|provider| super::ServiceModel::Api {
+                                provider,
+                                model: settings.cloud_model.clone(),
+                            })
+                        };
+                    target.and_then(|t| {
+                        t.edit(
+                            &settings.agent_profiles,
+                            &settings.processing_prompt,
+                            &text,
+                            &cancel,
+                        )
+                    })
+                }
             };
             let _ = tx.send(result);
         });

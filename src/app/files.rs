@@ -40,12 +40,20 @@ pub struct FileView {
     pub exported: Option<PathBuf>,
     pub playing: Option<usize>,
     pub speech_model: String,
-    pub text_model: Option<String>,
+    pub text_model: Option<FileEditor>,
     pub identify_speakers: bool,
     pub voices_ready: bool,
     pub voices_local: Option<PathBuf>,
     pub voices_downloaded: bool,
     pub using_local_voices: bool,
+}
+
+// A plain string is the local model ID used in existing libraries.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FileEditor {
+    Local(String),
+    Service(super::ServiceModel),
 }
 
 pub enum FileCommand {
@@ -59,7 +67,7 @@ pub enum FileCommand {
     AddSpeaker { line: usize, name: String },
     Export { path: PathBuf, format: ExportFormat },
     SetSpeech(String),
-    SetText(Option<String>),
+    SetText(Option<FileEditor>),
     SetIdentifySpeakers(bool),
     InstallVoices,
     ConnectVoices(PathBuf),
@@ -73,7 +81,7 @@ struct FileOptions {
     folder: Option<PathBuf>,
     use_local: bool,
     speech: Option<String>,
-    text: Option<String>,
+    text: Option<FileEditor>,
     identify_speakers: bool,
 }
 impl Default for FileOptions {
@@ -88,23 +96,44 @@ impl Default for FileOptions {
     }
 }
 
+#[derive(PartialEq, Eq)]
+enum ImportSource {
+    File,
+    Telegram,
+}
+
 impl FileOptions {
+    fn editor(
+        &self,
+        settings: &super::Settings,
+        store: &voai_models::ModelStore,
+        source: ImportSource,
+    ) -> Result<Option<job::Editor>, String> {
+        Ok(match &self.text {
+            Some(FileEditor::Local(id)) => Some(job::Editor::Local(settings.path_for(
+                store,
+                id,
+                voai_models::ModelKind::Text,
+            )?)),
+            Some(FileEditor::Service(target)) if source == ImportSource::File => Some(
+                job::Editor::Service(target.clone(), settings.agent_profiles.clone()),
+            ),
+            _ => None,
+        })
+    }
     fn pipeline(
         &self,
         settings: &super::Settings,
         store: &voai_models::ModelStore,
         voices: Option<PathBuf>,
+        source: ImportSource,
     ) -> Result<job::Pipeline, String> {
         let speech = self.speech.as_deref().unwrap_or(&settings.speech);
         Ok(job::Pipeline {
             model: settings.path_for(store, speech, voai_models::ModelKind::Speech)?,
             language: settings.language.clone(),
             voices,
-            editor: self
-                .text
-                .as_deref()
-                .map(|id| settings.path_for(store, id, voai_models::ModelKind::Text))
-                .transpose()?,
+            editor: self.editor(settings, store, source)?,
             prompt: settings.processing_prompt.clone(),
         })
     }
@@ -260,7 +289,9 @@ impl Files {
         }
         Ok(BotPipeline {
             tools: self.tools.clone(),
-            pipeline: self.options.pipeline(settings, store, None)?,
+            pipeline: self
+                .options
+                .pipeline(settings, store, None, ImportSource::Telegram)?,
         })
     }
 
@@ -385,7 +416,8 @@ impl Files {
                 let tools = self.tools.clone();
                 let voices = self.selected_voices().filter(|_| options.identify_speakers);
                 self.start("app.files.preparing", true, move |_, work| {
-                    let pipeline = options.pipeline(&settings, &store, voices)?;
+                    let pipeline =
+                        options.pipeline(&settings, &store, voices, ImportSource::File)?;
                     job::import(&tools, source, &pipeline, work).map(ResultView::Imported)
                 });
             }

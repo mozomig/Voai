@@ -1,4 +1,5 @@
 use super::*;
+use crate::app::{EditorSource, FileEditor, ServiceModel};
 use gpui_component::menu::PopupMenu;
 use voai_l10n::{tf, tr};
 
@@ -6,7 +7,18 @@ impl Settings {
     pub(super) fn file_setup(&self, p: Palette, cx: &Context<Self>) -> Div {
         let files = &self.snapshot.files;
         let speech = self.file_model(ModelTab::Speech, Some(&files.speech_model));
-        let text_model = self.file_model(ModelTab::Text, files.text_model.as_deref());
+        let mut missing_editor = false;
+        let editor_name = match &files.text_model {
+            Some(FileEditor::Service(target)) => target.name(),
+            Some(FileEditor::Local(id)) => match self.file_model(ModelTab::Text, Some(id)) {
+                Some(model) => &model.name,
+                None => {
+                    missing_editor = true;
+                    tr("ui.model.unavailable")
+                }
+            },
+            None => tr("ui.edit.none"),
+        };
         let local_voices = files
             .voices_local
             .as_deref()
@@ -34,17 +46,7 @@ impl Settings {
                     .unwrap_or(tr("ui.model.choose")),
             ),
             (ModelTab::Speakers, tr("ui.files.speakers"), voices),
-            (
-                ModelTab::Text,
-                tr("ui.files.editing"),
-                text_model
-                    .map(|m| m.name.as_str())
-                    .unwrap_or(if files.text_model.is_some() {
-                        tr("ui.model.unavailable")
-                    } else {
-                        tr("ui.edit.none")
-                    }),
-            ),
+            (ModelTab::Text, tr("ui.files.editing"), editor_name),
         ] {
             let owner = cx.entity().downgrade();
             let display = value
@@ -77,9 +79,29 @@ impl Settings {
                     let Some(view) = owner.upgrade() else {
                         return menu;
                     };
-                    view.read(cx).file_setup_menu(menu, tab, &owner)
+                    let settings = view.read(cx);
+                    let menu = menu
+                        .min_w(px(208.))
+                        .max_w(px(352.))
+                        .max_h(px(320.))
+                        .scrollable(true);
+                    let menu = if tab == ModelTab::Text {
+                        settings.file_editor_menu(menu)
+                    } else {
+                        settings.file_setup_menu(menu, tab)
+                    };
+                    Self::file_menu_links(menu, tab, &owner)
                 });
             setup = setup.child(Self::setting(p, title, "", picker));
+        }
+        if let Some(FileEditor::Service(target)) = &files.text_model
+            && !matches!(target, ServiceModel::Server { .. })
+        {
+            setup = setup.child(text(
+                tf!("ui.files.cloud_hint", provider = target.source_name()),
+                12.,
+                p.muted,
+            ));
         }
         let import_label = if files.identify_speakers && !files.voices_ready {
             tr("ui.files.transcribe_without")
@@ -91,9 +113,7 @@ impl Settings {
             .mt_2()
             .child(
                 primary_button("file-import", import_label, p)
-                    .disabled(
-                        speech.is_none() || (files.text_model.is_some() && text_model.is_none()),
-                    )
+                    .disabled(speech.is_none() || missing_editor)
                     .on_click(cx.listener(|this, _, _, cx| this.import_media(cx))),
             )
             .when(files.document.is_some(), |r| {
@@ -112,25 +132,13 @@ impl Settings {
     }
 
     fn file_model(&self, tab: ModelTab, id: Option<&str>) -> Option<&ModelRow> {
-        self.snapshot.models.iter().find(|model| {
-            Some(model.id.as_str()) == id
-                && model.text_model == (tab == ModelTab::Text)
-                && matches!(model.state, ModelState::Selected | ModelState::Installed)
-        })
+        self.snapshot
+            .installed_models(tab == ModelTab::Text)
+            .find(|model| Some(model.id.as_str()) == id)
     }
 
-    fn file_setup_menu(
-        &self,
-        mut menu: PopupMenu,
-        tab: ModelTab,
-        owner: &WeakEntity<Self>,
-    ) -> PopupMenu {
+    fn file_setup_menu(&self, mut menu: PopupMenu, tab: ModelTab) -> PopupMenu {
         let files = &self.snapshot.files;
-        menu = menu
-            .min_w(px(208.))
-            .max_w(px(352.))
-            .max_h(px(280.))
-            .scrollable(true);
         if tab == ModelTab::Speakers {
             menu = menu.item(self.file_option(
                 tr("ui.files.without_speakers"),
@@ -153,33 +161,19 @@ impl Settings {
                 ));
             }
         } else {
-            let is_text = tab == ModelTab::Text;
-            if is_text {
+            for model in self.snapshot.installed_models(false) {
+                let id = model.id.clone();
                 menu = menu.item(self.file_option(
-                    tr("ui.edit.none"),
-                    files.text_model.is_none(),
-                    || FileCommand::SetText(None),
+                    model.name.clone(),
+                    files.speech_model == id,
+                    move || FileCommand::SetSpeech(id.clone()),
                 ));
             }
-            for model in self.snapshot.models.iter().filter(|m| {
-                m.text_model == is_text
-                    && matches!(m.state, ModelState::Selected | ModelState::Installed)
-            }) {
-                let id = model.id.clone();
-                let checked = if is_text {
-                    files.text_model.as_ref() == Some(&id)
-                } else {
-                    files.speech_model == id
-                };
-                menu = menu.item(self.file_option(model.name.clone(), checked, move || {
-                    if is_text {
-                        FileCommand::SetText(Some(id.clone()))
-                    } else {
-                        FileCommand::SetSpeech(id.clone())
-                    }
-                }));
-            }
         }
+        menu
+    }
+
+    fn file_menu_links(mut menu: PopupMenu, tab: ModelTab, owner: &WeakEntity<Self>) -> PopupMenu {
         if !menu.is_empty() {
             menu = menu.separator();
         }
@@ -195,10 +189,96 @@ impl Settings {
         ));
         if tab == ModelTab::Text {
             let owner = owner.clone();
-            menu = menu.item(PopupMenuItem::new(tr("ui.edit.prompt_settings")).on_click(
+            menu = menu.item(PopupMenuItem::new(tr("ui.page.editing")).on_click(
                 move |_, window, cx| {
                     let _ =
                         owner.update(cx, |view, cx| view.navigate(Page::Processing, window, cx));
+                },
+            ));
+        }
+        menu
+    }
+
+    fn file_editor_menu(&self, menu: PopupMenu) -> PopupMenu {
+        let current = self.snapshot.files.text_model.as_ref();
+        let mut menu = menu.item(self.file_option(tr("ui.edit.none"), current.is_none(), || {
+            FileCommand::SetText(None)
+        }));
+        let mut local = self.snapshot.installed_models(true).peekable();
+        if local.peek().is_some() {
+            menu = menu.label(tr("ui.switcher.on_mac"));
+            for model in local {
+                let value = FileEditor::Local(model.id.clone());
+                menu = menu.item(self.file_option(
+                    model.name.clone(),
+                    current == Some(&value),
+                    move || FileCommand::SetText(Some(value.clone())),
+                ));
+            }
+        }
+        for service in EditorSource::services() {
+            menu = self.file_service_models(menu.separator().label(service.name()), service);
+        }
+        menu
+    }
+
+    fn file_service_models(&self, mut menu: PopupMenu, service: EditorSource) -> PopupMenu {
+        let s = &self.snapshot;
+        let choices: Vec<_> = match service {
+            EditorSource::Server => {
+                let mut models = s.server_models.clone();
+                if !s.server_model.is_empty() && !models.contains(&s.server_model) {
+                    models.push(s.server_model.clone());
+                }
+                models
+                    .into_iter()
+                    .map(|model| {
+                        (
+                            model.clone(),
+                            ServiceModel::Server {
+                                endpoint: s.server_url.clone(),
+                                model,
+                            },
+                        )
+                    })
+                    .collect()
+            }
+            EditorSource::Api(provider) => provider
+                .models()
+                .iter()
+                .map(|&model| {
+                    (
+                        model.to_owned(),
+                        ServiceModel::Api {
+                            provider,
+                            model: model.into(),
+                        },
+                    )
+                })
+                .collect(),
+            EditorSource::Cli(agent) => self
+                .agent_ui
+                .choices(agent, &s.agent_profiles.get(agent).model)
+                .into_iter()
+                .map(|(label, model)| (label, ServiceModel::Cli { agent, model }))
+                .collect(),
+        };
+        for (label, target) in choices {
+            let value = FileEditor::Service(target);
+            menu = menu.item(self.file_option(
+                label,
+                s.files.text_model.as_ref() == Some(&value),
+                move || FileCommand::SetText(Some(value.clone())),
+            ));
+        }
+        if let EditorSource::Server = service {
+            let endpoint = s.server_url.clone();
+            let engine = self.engine.clone();
+            menu = menu.item(PopupMenuItem::new(tr("ui.edit.find_models")).on_click(
+                move |_, _, _| {
+                    engine
+                        .borrow_mut()
+                        .dispatch(Command::DiscoverServer(endpoint.clone()));
                 },
             ));
         }

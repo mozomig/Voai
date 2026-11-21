@@ -4,17 +4,24 @@ Hold **⌥ Space** and speak. Release the keys and Voai types the words at your 
 
 ![Voai on Mac, with the compact dictation widget and a transcript showing two speakers and timestamps](docs/images/voai.png)
 
-## What you can do
+## Features
 
-- **Dictate into a text field.** Watch the words appear in a floating panel, or switch to a small waveform above the field. You can assign the shortcut to a single key, including right Command. History keeps the audio and text from your last 20 dictations.
-- **Transcribe an interview or meeting.** Open an audio or video file to get a readable transcript. Turn on speaker identification for a timestamped conversation. Click a timestamp to hear the original, correct a speaker's name, then export plain text or SRT subtitles.
-- **Read a Telegram voice message.** Forward a voice note, audio file or video to your own bot. While Voai is running on your Mac, the bot replies with the transcript in your private chat.
+- [x] 🎙️ **Dictate at the cursor.** Hold a shortcut to speak, then release it to insert the text. A single right Command key works too.
+- [x] 🌊 **Choose your dictation widget.** See a live draft in the floating panel or just a waveform near the text field. Turn on local noise suppression when you need it.
+- [x] 🎞️ **Transcribe audio and video.** Get plain text or a timestamped conversation. Play a turn, correct its speaker and export TXT or SRT.
+- [x] ✍️ **Edit transcripts your way.** Write your own editing instructions and pick separate models for dictation and files. Run a GGUF model on your Mac, connect Ollama or LM Studio, or use an OpenAI or Anthropic API key.
+- [x] ⌨️ **Use your Codex or Claude login.** Choose Codex CLI or Claude Code as the editor. Voai finds the executable automatically and lets you set its path, model and reasoning effort.
+- [x] 📥 **Bring your own models.** Download verified weights in Voai or select compatible models already on your Mac.
+- [x] 🕘 **Revisit recent dictations.** Play back the last 20 recordings, compare original and edited text, or copy either version. You can also copy the live draft from the floating panel.
+- [x] 💬 **Transcribe Telegram messages.** Forward a voice note, audio file or video to your paired bot. Your Mac transcribes it and replies in the same private chat.
+- [x] 🌐 **Switch between English and Russian.** Follow your Mac’s language or choose the interface and spoken language separately.
+- [x] 🔄 **Update in the app.** Check for signed updates from the Voai menu.
 
 ## Where your speech goes
 
-Whisper, Parakeet and GigaAM transcribe on your Mac using Metal. GigaAM specializes in Russian. Parakeet TDT v3 covers 25 European languages. Download a model in Voai or point it at one you already have. Once the models are on disk, dictation and file transcription work offline.
+Whisper, Parakeet and GigaAM transcribe on your Mac using Metal. GigaAM specializes in Russian. Parakeet TDT v3 covers 25 European languages. Download a model in Voai or point it at one you already have. Once the models are on disk, speech recognition works offline.
 
-Text editing is optional. For dictation, use a GGUF model, a local Ollama or LM Studio server, or your own OpenAI or Anthropic API key. In cloud mode, the selected provider receives your instructions and transcript. File and Telegram transcripts use local models for editing.
+Text editing is optional. Choosing a cloud editor for dictation or file transcription sends the editing instructions and recognized text to that provider. Audio stays on your Mac. The Telegram bot uses local speech recognition and optional GGUF editing.
 
 ## Try it
 

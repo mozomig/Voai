@@ -1,9 +1,11 @@
 use voai_l10n::tr;
+mod agent;
 mod cloud;
 mod credentials;
 mod local;
 pub(crate) mod server;
 
+pub use agent::{AgentCli, AgentConfig, AgentProfiles, process_agent};
 pub use cloud::process_cloud;
 pub use credentials::{has_api_key, set_api_key};
 pub use local::process_local;

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use voai_l10n::{tf, tr};
 
-use super::{Engine, style::*};
+use super::{Engine, copy_text::CopyText, style::*};
 use crate::app::{Command, ModelState, Phase, Snapshot};
 use gpui::{prelude::*, *};
 
@@ -213,7 +213,14 @@ impl Render for Panel {
                             .child(
                                 text(phase_title(s.phase), 13., p.ink)
                                     .font_weight(FontWeight::SEMIBOLD),
-                            ),
+                            )
+                            .when(!empty, |r| {
+                                r.child(CopyText::new(
+                                    "panel-copy",
+                                    &s.transcript,
+                                    tr("ui.action.copy_text"),
+                                ))
+                            }),
                     )
                     .when(!recovering, |r| {
                         r.child(

@@ -72,16 +72,11 @@ impl Settings {
     fn local_processor(&self, p: Palette, cx: &Context<Self>) -> Div {
         let selected = self
             .snapshot
-            .models
-            .iter()
-            .find(|m| m.text_model && matches!(m.state, ModelState::Selected));
+            .installed_models(true)
+            .find(|model| matches!(model.state, ModelState::Selected));
         let choices = self
             .snapshot
-            .models
-            .iter()
-            .filter(|m| {
-                m.text_model && matches!(m.state, ModelState::Selected | ModelState::Installed)
-            })
+            .installed_models(true)
             .map(|m| (m.name.clone(), m.id.clone()))
             .collect::<Vec<_>>();
         col()
@@ -123,24 +118,27 @@ impl Settings {
 
     fn cloud_processor(&self, p: Palette, cx: &Context<Self>) -> Div {
         let s = &self.snapshot;
-        let provider = self.cloud_provider();
-        col()
-            .mt_2()
-            .child(Self::setting(
+        let panel = col().mt_2().child(Self::setting(
+            p,
+            tr("ui.edit.provider"),
+            "",
+            self.picker(
+                "provider",
+                s.provider.clone(),
+                crate::app::EditorSource::CLOUD
+                    .map(|source| source.name())
+                    .map(|name| (name.to_owned(), name.to_owned()))
+                    .into(),
+                s.provider.clone(),
+                Command::SetProvider,
                 p,
-                tr("ui.edit.provider"),
-                "",
-                self.picker(
-                    "provider",
-                    s.provider.clone(),
-                    ["OpenAI", "Anthropic"]
-                        .map(|name| (name.to_owned(), name.to_owned()))
-                        .into(),
-                    s.provider.clone(),
-                    Command::SetProvider,
-                    p,
-                ),
-            ))
+            ),
+        ));
+        if let Some(agent) = voai_models::AgentCli::from_name(&s.provider) {
+            return panel.child(self.agent_processor(agent, p, cx));
+        }
+        let provider = self.cloud_provider();
+        panel
             .child(Self::setting(
                 p,
                 tr("ui.edit.model"),

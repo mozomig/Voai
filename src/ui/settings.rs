@@ -1,4 +1,5 @@
 use voai_l10n::tr;
+mod agent;
 mod dictation;
 mod files;
 mod history;
@@ -74,6 +75,7 @@ pub(super) struct Settings {
     page: Page,
     intro: Option<onboarding::Step>,
     files_ui: files::FileControls,
+    agent_ui: agent::AgentControls,
     expanded_entry: Option<i64>,
     confirm_delete: Option<i64>,
     model_tab: ModelTab,
@@ -172,7 +174,9 @@ impl Settings {
         })
         .detach();
         window.focus(&focus);
+        let agent_ui = agent::AgentControls::new(&snapshot, window, cx);
         Self {
+            agent_ui,
             engine,
             last_test: snapshot.test_result.as_ref().map(|(id, _)| *id),
             intro: (!snapshot.onboarding_complete).then_some(onboarding::Step::Welcome),
@@ -257,6 +261,7 @@ impl Settings {
                 input.set_value(snapshot.processing_prompt.clone(), window, cx)
             });
         }
+        self.agent_ui.sync(&self.snapshot, &snapshot, window, cx);
         let draft = self.server_url.read(cx).value();
         if self.snapshot.server_url != snapshot.server_url
             && (draft.as_str() == self.snapshot.server_url

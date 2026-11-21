@@ -152,7 +152,7 @@ fn file_model_choices_survive_reopening_the_library() {
     let folder = dir.path().join("custom-voices");
     db.save_choice(&FileOptions {
         speech: Some("medium".into()),
-        text: Some("qwen".into()),
+        text: Some(FileEditor::Local("qwen".into())),
         folder: Some(folder.clone()),
         use_local: true,
         identify_speakers: false,
@@ -164,7 +164,7 @@ fn file_model_choices_survive_reopening_the_library() {
         .pipeline_options()
         .unwrap();
     assert_eq!(restored.speech.as_deref(), Some("medium"));
-    assert_eq!(restored.text.as_deref(), Some("qwen"));
+    assert_eq!(restored.text, Some(FileEditor::Local("qwen".into())));
     assert_eq!(restored.folder, Some(folder));
     assert!(restored.use_local && !restored.identify_speakers);
 }
@@ -209,12 +209,35 @@ fn imports_media_with_packaged_workers() {
     let from_env = |key| PathBuf::from(env::var_os(key).expect("Missing QA path"));
     let tools = Tools::from_executable(from_env("VOAI_FILE_QA_APP").join("Contents/MacOS/voai"));
     let source = from_env("VOAI_FILE_QA_MEDIA");
+    let qa_cli = env::var("VOAI_FILE_QA_CLI")
+        .ok()
+        .map(|name| voai_models::AgentCli::from_name(&name).expect("Unknown QA CLI"));
+    let editor = if let Some(agent) = qa_cli {
+        let mut profiles = voai_models::AgentProfiles::default();
+        profiles.set(
+            agent,
+            voai_models::AgentConfig {
+                effort: "low".into(),
+                ..Default::default()
+            },
+        );
+        Some(job::Editor::Service(
+            crate::app::ServiceModel::Cli {
+                agent,
+                model: String::new(),
+            },
+            profiles,
+        ))
+    } else {
+        env::var_os("VOAI_FILE_QA_EDITOR").map(|p| job::Editor::Local(p.into()))
+    };
     let pipeline = job::Pipeline {
         model: from_env("VOAI_FILE_QA_WHISPER"),
         language: "ru".into(),
         voices: env::var_os("VOAI_FILE_QA_VOICES").map(Into::into),
-        editor: env::var_os("VOAI_FILE_QA_EDITOR").map(Into::into),
-        prompt: voai_models::default_processing_prompt().into(),
+        editor,
+        // Translation makes a successful edit observable even for a correctly punctuated fixture.
+        prompt: "Translate this phrase into English. Return only the translation.".into(),
     };
     let (updates, rx) = mpsc::channel();
     let (wake, _) = async_channel::bounded(1);
@@ -249,6 +272,12 @@ fn imports_media_with_packaged_workers() {
         assert!(doc.warning_text().is_none() && !doc.speakers.is_empty());
     }
     if pipeline.editor.is_some() {
+        assert!(!doc.notices.contains(&document::Notice::EditingInterrupted));
+        assert!(
+            doc.lines
+                .iter()
+                .all(|l| l.text.chars().any(|c| c.is_ascii_alphabetic()))
+        );
         assert!(doc.lines.iter().any(|l| l.original.is_some()));
     }
     let tmp = tempfile::tempdir().unwrap();
@@ -369,4 +398,45 @@ fn cancel_stops_packaged_recognition_without_saving() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn file_services_persist_and_never_reach_the_bot() {
+    use crate::app::ServiceModel;
+    let dir = tempfile::tempdir().unwrap();
+    let db = store::Store::open(dir.path()).unwrap();
+    let store = voai_models::ModelStore::new(dir.path().into());
+    let settings = crate::app::Settings::default();
+    for target in [
+        ServiceModel::Server {
+            endpoint: "http://127.0.0.1:11434/v1".into(),
+            model: "local".into(),
+        },
+        ServiceModel::Api {
+            provider: voai_models::Provider::OpenAI,
+            model: "gpt-4o".into(),
+        },
+        ServiceModel::Cli {
+            agent: voai_models::AgentCli::Claude,
+            model: "sonnet".into(),
+        },
+    ] {
+        db.save_choice(&FileOptions {
+            text: Some(FileEditor::Service(target.clone())),
+            ..Default::default()
+        })
+        .unwrap();
+        let options = db.pipeline_options().unwrap();
+        assert!(
+            matches!(options.editor(&settings, &store, ImportSource::File).unwrap(), Some(job::Editor::Service(t, _)) if t == target)
+        );
+        assert!(
+            options
+                .editor(&settings, &store, ImportSource::Telegram)
+                .unwrap()
+                .is_none()
+        );
+    }
+    let legacy: FileOptions = serde_json::from_str(r#"{"text":"existing-gguf"}"#).unwrap();
+    assert_eq!(legacy.text, Some(FileEditor::Local("existing-gguf".into())));
 }

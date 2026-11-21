@@ -20,6 +20,9 @@ ui.action.configure:
 ui.action.connect:
   en: "Connect"
   ru: "Подключить"
+ui.action.copy_text:
+  en: "Copy text"
+  ru: "Скопировать текст"
 ui.action.delete:
   en: "Delete"
   ru: "Удалить"
@@ -188,6 +191,12 @@ ui.history.before:
 ui.history.collapse:
   en: "Collapse"
   ru: "Свернуть"
+ui.history.copy_edited:
+  en: "Copy edited text"
+  ru: "Скопировать текст после обработки"
+ui.history.copy_original:
+  en: "Copy original transcript"
+  ru: "Скопировать исходный текст"
 ui.history.date_format:
   en: "%Y-%m-%d"
   ru: "%d.%m.%Y"
@@ -552,8 +561,8 @@ ui.telegram.link_account:
   en: "Link account"
   ru: "Привязать аккаунт"
 ui.telegram.model_source:
-  en: "Uses the models selected in Transcription"
-  ru: "Используются модели из раздела «Расшифровка»"
+  en: "Uses the speech and GGUF models selected in Transcription. Other editors are skipped."
+  ru: "Речь и GGUF-модель из «Расшифровки». При выборе другого редактора бот вернёт исходный текст."
 ui.telegram.network:
   en: "Network settings…"
   ru: "Настройки сети…"
@@ -653,3 +662,21 @@ ui.intro.back:
 ui.intro.reopen:
   en: "Quick start"
   ru: "Краткое знакомство"
+ui.agent.auto:
+  en: "Find automatically"
+  ru: "Найти автоматически"
+ui.agent.default:
+  en: "CLI default"
+  ru: "По умолчанию в CLI"
+ui.agent.path:
+  en: "CLI executable path"
+  ru: "Путь к программе CLI"
+ui.agent.privacy:
+  en: "Voai sends your transcript and editing instructions to the provider through its CLI. Sign in to the CLI on this Mac first."
+  ru: "Текст и инструкция отправляются провайдеру через CLI. Сначала войдите в аккаунт CLI на этом Mac."
+ui.agent.effort:
+  en: "Reasoning effort"
+  ru: "Уровень рассуждений"
+ui.files.cloud_hint:
+  en: "Voai sends the text of each turn and your editing instructions to %{provider}. Audio stays on this Mac."
+  ru: "Текст каждой реплики и инструкция отправятся в %{provider}. Аудио останется на Mac."

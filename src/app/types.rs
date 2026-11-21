@@ -66,6 +66,8 @@ pub struct Snapshot {
     pub processing_prompt: String,
     pub provider: String,
     pub cloud_model: String,
+    pub agent_profiles: voai_models::AgentProfiles,
+    pub agent_config: voai_models::AgentConfig,
     pub server_url: String,
     pub server_model: String,
     pub server_models: Vec<String>,
@@ -78,6 +80,15 @@ pub struct Snapshot {
     pub models: Vec<ModelRow>,
     pub connecting_model: bool,
     pub test_result: Option<(u64, String)>,
+}
+
+impl Snapshot {
+    pub fn installed_models(&self, text_model: bool) -> impl Iterator<Item = &ModelRow> {
+        self.models.iter().filter(move |model| {
+            model.text_model == text_model
+                && matches!(model.state, ModelState::Installed | ModelState::Selected)
+        })
+    }
 }
 
 pub enum Command {
@@ -98,6 +109,7 @@ pub enum Command {
     ResetProcessingPrompt,
     SetProvider(String),
     SetCloudModel(String),
+    ConfigureAgent(voai_models::AgentCli, voai_models::AgentConfig),
     DiscoverServer(String),
     SetServerModel(String),
     SaveServerKey(String),

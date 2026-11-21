@@ -486,3 +486,27 @@ _version: 2
 "model.gguf.kind":
   en: "Choose a GGUF that matches the selected model type."
   ru: "Выберите GGUF, подходящий для этого типа модели."
+agent.path_invalid:
+  en: "Enter an absolute path to an executable file."
+  ru: "Укажите полный путь к исполняемому файлу."
+agent.model_invalid:
+  en: "Enter a model ID or leave the model field empty for the CLI default."
+  ru: "Введите ID модели или оставьте поле пустым для выбора по умолчанию."
+agent.missing:
+  en: "CLI not found. Set its executable path in Text editing."
+  ru: "CLI не найден. Укажите путь к программе в разделе «Обработка»."
+agent.start:
+  en: "Couldn’t launch the CLI. Check its path and installation."
+  ru: "Не удалось запустить CLI. Проверьте установку и путь к программе."
+agent.failed:
+  en: "The CLI couldn’t edit the text. Check your CLI version, sign-in, model and connection."
+  ru: "CLI не смог обработать текст. Проверьте версию программы, вход в аккаунт, модель и соединение."
+agent.timeout:
+  en: "The CLI took too long to respond."
+  ru: "Время ожидания ответа CLI истекло."
+agent.provider_changed:
+  en: "The editing provider has changed. Reopen its settings."
+  ru: "Провайдер изменился. Откройте его настройки ещё раз."
+agent.effort_invalid:
+  en: "This CLI does not support the selected reasoning effort."
+  ru: "Этот CLI не поддерживает выбранный уровень рассуждений."

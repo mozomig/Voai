@@ -9,8 +9,9 @@ pub use processing::server::{
     has_server_key, normalize_server_url, process_server, server_models, set_server_key,
 };
 pub use processing::{
-    MAX_PROMPT_BYTES, Provider, default_processing_prompt, has_api_key, process_cloud,
-    process_local, set_api_key, validate_processing_prompt,
+    AgentCli, AgentConfig, AgentProfiles, MAX_PROMPT_BYTES, Provider, default_processing_prompt,
+    has_api_key, process_agent, process_cloud, process_local, set_api_key,
+    validate_processing_prompt,
 };
 pub use store::ModelStore;
 

@@ -32,7 +32,7 @@ The transcription screen dispatches commands to `app::files::Files`. Starting an
 1. The signed `voai-media-helper` uses AVFoundation to decode a local audio track into a private temporary 16 kHz PCM file. It also plays a time interval in the original recording.
 2. `voai --file-worker` reads overlapping windows of up to 30 seconds and returns words with absolute timestamps. A separate protocol lets file imports outlast short dictation sessions.
 3. Optional `voai-diarize` uses sherpa-onnx to extract speaker intervals in 75-second windows with up to five seconds of context on each side. It keeps voice embeddings and the intervals at the most recent join to match speakers across windows. `files::document` assigns words to intervals and marks uncertain turns. User-provided weights are validated outside the UI process.
-4. Optional `voai-text-helper --edit-lines-v1` loads a GGUF model once per file and edits one turn at a time. Changed turns keep their originals. File editing uses local weights only.
+4. Optional `voai-text-helper --edit-lines-v1` loads a GGUF model once per file and edits one turn at a time. Changed turns keep their originals. File imports can instead use a loopback server or an explicitly selected cloud API or CLI. Each request contains one turn and the editing instructions. The Telegram pipeline accepts only the GGUF editor.
 
 Each document owns its speaker IDs. Renaming a speaker updates the document's name map. Reassigning a turn affects that turn alone. Before playback, Voai checks that the source file still matches its recorded identity. TXT and SRT exports preserve original timestamps and use a temporary file followed by rename.
 

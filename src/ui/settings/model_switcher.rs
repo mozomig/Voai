@@ -53,7 +53,15 @@ impl Settings {
                 ),
                 Mode::Cloud => (
                     tf!("ui.switcher.cloud", provider = &s.provider),
-                    Some(s.cloud_model.as_str()),
+                    Some(if voai_models::AgentCli::from_name(&s.provider).is_some() {
+                        if s.agent_config.model.is_empty() {
+                            tr("ui.agent.default")
+                        } else {
+                            s.agent_config.model.as_str()
+                        }
+                    } else {
+                        s.cloud_model.as_str()
+                    }),
                 ),
             }
         } else {
@@ -148,26 +156,30 @@ impl Settings {
                 }
                 Mode::Cloud => {
                     menu = menu.label(tf!("ui.switcher.cloud", provider = &s.provider));
-                    for name in self.cloud_provider().models() {
-                        menu = menu.item(self.model_choice(
-                            name,
-                            name,
-                            *name == s.cloud_model,
-                            Command::SetCloudModel,
-                        ));
+                    if let Some(agent) = voai_models::AgentCli::from_name(&s.provider) {
+                        for (label, id) in self.agent_ui.choices(agent, &s.agent_config.model) {
+                            menu = menu.item(self.model_choice(
+                                &label,
+                                &id,
+                                id == s.agent_config.model,
+                                Command::SetCloudModel,
+                            ));
+                        }
+                    } else {
+                        for name in self.cloud_provider().models() {
+                            menu = menu.item(self.model_choice(
+                                name,
+                                name,
+                                *name == s.cloud_model,
+                                Command::SetCloudModel,
+                            ));
+                        }
                     }
                 }
                 _ => {}
             }
         }
-        let mut models = s
-            .models
-            .iter()
-            .filter(|m| {
-                m.text_model == processing
-                    && matches!(m.state, ModelState::Selected | ModelState::Installed)
-            })
-            .peekable();
+        let mut models = s.installed_models(processing).peekable();
         if models.peek().is_some() {
             if processing {
                 menu = menu.label(tr("ui.switcher.on_mac"));

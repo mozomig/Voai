@@ -1,5 +1,6 @@
 use voai_l10n::tr;
 mod appearance;
+mod copy_text;
 mod panel;
 mod settings;
 mod style;

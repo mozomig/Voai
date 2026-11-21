@@ -38,6 +38,7 @@ pub(super) struct Settings {
     pub processing_prompt: String,
     pub provider: String,
     pub cloud_model: String,
+    pub agent_profiles: voai_models::AgentProfiles,
     pub server_url: String,
     pub server_model: String,
 }
@@ -72,6 +73,7 @@ impl Default for Settings {
             )
             .into(),
             provider: "OpenAI".into(),
+            agent_profiles: Default::default(),
             cloud_model: voai_models::Provider::OpenAI.models()[0].into(),
             server_url: "http://127.0.0.1:11434/v1".into(),
             server_model: String::new(),

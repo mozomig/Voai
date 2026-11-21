@@ -86,11 +86,17 @@ struct EditedLine {
 }
 
 #[derive(Clone)]
+pub(super) enum Editor {
+    Local(PathBuf),
+    Service(crate::app::ServiceModel, voai_models::AgentProfiles),
+}
+
+#[derive(Clone)]
 pub(super) struct Pipeline {
     pub model: PathBuf,
     pub language: String,
     pub voices: Option<PathBuf>,
-    pub editor: Option<PathBuf>,
+    pub editor: Option<Editor>,
     pub prompt: String,
 }
 
@@ -296,12 +302,29 @@ pub(super) fn import(
 
 fn edit_lines(
     helper: &Path,
-    model: &Path,
+    editor: &Editor,
     prompt: &str,
     lines: &mut [FileLine],
     work: &Work,
 ) -> Result<(), String> {
     let stage_key = "app.files.editing";
+    let model = match editor {
+        Editor::Local(model) => model,
+        Editor::Service(target, profiles) => {
+            let count = lines.len();
+            work.progress(stage_key, 0);
+            for (index, line) in lines.iter_mut().enumerate() {
+                work.check()?;
+                let edited = target.edit(profiles, prompt, &line.text, &work.cancelled)?;
+                work.check()?;
+                if edited != line.text {
+                    line.original = Some(std::mem::replace(&mut line.text, edited));
+                }
+                work.progress(stage_key, ((index + 1) * 100 / count) as u8);
+            }
+            return Ok(());
+        }
+    };
     let error = tr("app.files.edit_failed");
     let mut input = tempfile::tempfile().map_err(|_| error)?;
     fn write_field(w: &mut impl Write, s: &str) -> std::io::Result<()> {
