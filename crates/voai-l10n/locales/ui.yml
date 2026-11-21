@@ -680,3 +680,15 @@ ui.agent.effort:
 ui.files.cloud_hint:
   en: "Voai sends the text of each turn and your editing instructions to %{provider}. Audio stays on this Mac."
   ru: "Текст каждой реплики и инструкция отправятся в %{provider}. Аудио останется на Mac."
+ui.panel.insert_here:
+  en: "Insert here"
+  ru: "Вставить сюда"
+ui.panel.always_here:
+  en: "Always for this app"
+  ru: "Всегда для приложения"
+ui.dictation.window_insertion:
+  en: "Insert at current cursor"
+  ru: "Вставка в окно"
+ui.dictation.ask_again:
+  en: "Ask each time"
+  ru: "Спрашивать каждый раз"

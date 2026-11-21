@@ -68,7 +68,7 @@ fn focused_field(pid: i32) -> Result<CFRetained<AXUIElement>, String> {
     // Embedded WebKit creates its accessibility subtree lazily. Materialize
     // structural containers, then ask the app for the authoritative focus again.
     let window: CFRetained<AXUIElement> = required(&app, "AXFocusedWindow")?;
-    let mut pending = std::collections::VecDeque::from([window]);
+    let mut pending = std::collections::VecDeque::from([window.clone()]);
     let deadline = std::time::Instant::now() + Duration::from_millis(180);
     for _ in 0..64 {
         let Some(container) = pending.pop_front() else {
@@ -93,10 +93,36 @@ fn focused_field(pid: i32) -> Result<CFRetained<AXUIElement>, String> {
             return Ok(field);
         }
     }
-    required(&app, "AXFocusedUIElement")
+    match attribute(&app, "AXFocusedUIElement") {
+        Ok(field) => Ok(field),
+        Err(AXError::NoValue | AXError::AttributeUnsupported) => Ok(window),
+        Err(status) => Err(tf!("app.insertion.check_field", code = status.0)),
+    }
 }
 
-fn capture(expected: Option<i32>) -> Result<Target, String> {
+#[derive(PartialEq)]
+enum Focus {
+    Field(Target),
+    Window(WindowTarget),
+}
+
+#[derive(PartialEq)]
+struct WindowTarget {
+    pid: i32,
+    window: CFRetained<AXUIElement>,
+    bundle: String,
+    name: String,
+}
+
+#[link(name = "Carbon", kind = "framework")]
+unsafe extern "C" {
+    fn IsSecureEventInputEnabled() -> u8;
+}
+
+fn capture(expected: Option<i32>) -> Result<Focus, String> {
+    if !trusted() {
+        return Err(permission_hint().into());
+    }
     let pid = front_pid().ok_or(tr("app.insertion.no_app"))?;
     if expected.is_some_and(|expected| expected != pid) {
         return Err(tr("app.insertion.other_app").into());
@@ -110,7 +136,30 @@ fn capture(expected: Option<i32>) -> Result<Target, String> {
         Err(error) => return Err(tf!("app.insertion.check_field", code = error.0)),
     }
     if attribute::<CFString>(&field, "AXRole").is_ok_and(|role| role.to_string() == "AXWindow") {
-        return Err(tr("app.insertion.window_only").into());
+        let app = objc2_app_kit::NSWorkspace::sharedWorkspace()
+            .frontmostApplication()
+            .filter(|app| app.processIdentifier() == pid && pid != std::process::id() as i32)
+            .ok_or(tr("app.insertion.other_app"))?;
+        let bundle = app
+            .bundleIdentifier()
+            .ok_or(tr("app.insertion.window_only"))?
+            .to_string();
+        let owner = unsafe { AXUIElement::new_application(pid) };
+        let window = required::<AXUIElement>(&owner, "AXFocusedWindow")?;
+        if window != field || bundle.is_empty() {
+            return Err(tr("app.insertion.place_cursor").into());
+        }
+        if unsafe { IsSecureEventInputEnabled() } != 0 {
+            return Err(tr("app.insertion.secure_field").into());
+        }
+        return Ok(Focus::Window(WindowTarget {
+            name: app
+                .localizedName()
+                .map_or_else(|| bundle.clone(), |s| s.to_string()),
+            pid,
+            window,
+            bundle,
+        }));
     }
     let window = required(&field, "AXWindow")?;
     let mut writable = 0;
@@ -146,13 +195,13 @@ fn capture(expected: Option<i32>) -> Result<Target, String> {
         return Err(tr("app.insertion.app_changed").into());
     }
     let selection = selected_range(&field)?;
-    Ok(Target {
+    Ok(Focus::Field(Target {
         pid,
         direct_write,
         field,
         window,
         selection,
-    })
+    }))
 }
 
 fn has_native_ancestry(field: &CFRetained<AXUIElement>) -> bool {
@@ -310,7 +359,7 @@ impl Target {
 }
 
 pub struct Destination {
-    pending: PendingInsertion<Target>,
+    focus: Focus,
     pub widget_anchor: Option<objc2_core_foundation::CGRect>,
 }
 
@@ -342,19 +391,48 @@ impl Destination {
             unsafe { app.set_attribute_value(&attr, objc2_core_foundation::CFBoolean::new(true)) };
         }
         let target = capture(Some(front))?;
-        let widget_anchor = with_anchor.then(|| target.widget_bounds()).flatten();
-        let pending = PendingInsertion::new(target);
+        let widget_anchor = match &target {
+            Focus::Field(field) if with_anchor => field.widget_bounds(),
+            _ => None,
+        };
         Ok(Self {
-            pending,
+            focus: target,
             widget_anchor,
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn test_window(bundle: &str) -> Self {
+        Self {
+            focus: Focus::Window(WindowTarget {
+                // No actual delivery in session consent tests.
+                pid: std::process::id() as i32,
+                window: unsafe { AXUIElement::new_application(std::process::id() as i32) },
+                bundle: bundle.into(),
+                name: "Test editor".into(),
+            }),
+            widget_anchor: None,
+        }
+    }
+
+    pub fn window_app(&self) -> Option<(&str, &str)> {
+        match &self.focus {
+            Focus::Window(target) => Some((&target.bundle, &target.name)),
+            Focus::Field(_) => None,
+        }
+    }
+
     pub fn deliver(self, text: &str) -> Result<Option<Receipt>, InsertionError<String>> {
         let mut receipt = None;
-        self.pending.deliver(
+        let field = match self.focus {
+            Focus::Window(target) => return deliver_to_window(target, text).map(|()| None),
+            Focus::Field(field) => field,
+        };
+        PendingInsertion::new(field).deliver(
             || {
-                let current = capture(None)?;
+                let Focus::Field(current) = capture(None)? else {
+                    return Err(tr("app.dictation.target_changed").into());
+                };
                 if !current.direct_write && text.chars().any(char::is_control) {
                     return Err(tr("app.insertion.multiline").into());
                 }
@@ -388,16 +466,66 @@ impl Destination {
 
 /// Quartz posts have no acknowledgement. Never retry a partially posted string.
 fn type_unicode(target: &Target, text: &str) -> Result<(), String> {
-    use objc2_core_graphics::{CGEvent, CGEventFlags};
-    let mut chars = text.chars().peekable();
-    while chars.peek().is_some() {
+    post_unicode(target.pid, text, || {
         if front_pid() != Some(target.pid) {
             return Err(tr("app.insertion.app_switched").into());
         }
-        let field = focused_field(target.pid)?;
-        if field != target.field {
+        if focused_field(target.pid)? != target.field {
             return Err(tr("app.insertion.field_switched").into());
         }
+        Ok(())
+    })
+    .map_err(|e| match e {
+        InsertionError::Unavailable(reason) | InsertionError::DeliveryUnknown(reason) => reason,
+        InsertionError::TargetChanged => tr("app.dictation.target_changed").into(),
+    })
+}
+
+fn deliver_to_window(target: WindowTarget, text: &str) -> Result<(), InsertionError<String>> {
+    if text.chars().any(char::is_control) {
+        return Err(InsertionError::Unavailable(
+            tr("app.insertion.multiline").into(),
+        ));
+    }
+    let owner = unsafe { AXUIElement::new_application(target.pid) };
+    post_unicode(target.pid, text, || {
+        if !trusted() {
+            return Err(permission_hint().into());
+        }
+        if unsafe { IsSecureEventInputEnabled() } != 0 {
+            return Err(tr("app.insertion.secure_field").into());
+        }
+        if required::<AXUIElement>(&owner, "AXFocusedWindow")? != target.window {
+            return Err(tr("app.dictation.target_changed").into());
+        }
+        match attribute::<AXUIElement>(&owner, "AXFocusedUIElement") {
+            Ok(field) if field == target.window => (),
+            Err(AXError::AttributeUnsupported | AXError::NoValue) => (),
+            _ => return Err(tr("app.dictation.target_changed").into()),
+        }
+        if front_pid() != Some(target.pid) {
+            return Err(tr("app.insertion.app_switched").into());
+        }
+        Ok(())
+    })
+}
+
+fn post_unicode(
+    pid: i32,
+    text: &str,
+    mut validate: impl FnMut() -> Result<(), String>,
+) -> Result<(), InsertionError<String>> {
+    use objc2_core_graphics::{CGEvent, CGEventFlags};
+    let mut chars = text.chars().peekable();
+    let mut posted = false;
+    while chars.peek().is_some() {
+        let failure = |message: String| {
+            if posted {
+                InsertionError::DeliveryUnknown(tr("app.insertion.uncertain").into())
+            } else {
+                InsertionError::Unavailable(message)
+            }
+        };
         let mut chunk = Vec::with_capacity(20);
         while let Some(&ch) = chars.peek() {
             if chunk.len() + ch.len_utf16() > 20 {
@@ -406,18 +534,20 @@ fn type_unicode(target: &Target, text: &str) -> Result<(), String> {
             chunk.extend_from_slice(ch.encode_utf16(&mut [0; 2]));
             chars.next();
         }
-        let down =
-            CGEvent::new_keyboard_event(None, 0, true).ok_or(tr("app.insertion.keyboard_event"))?;
+        let down = CGEvent::new_keyboard_event(None, 0, true)
+            .ok_or_else(|| failure(tr("app.insertion.keyboard_event").into()))?;
         let up = CGEvent::new_keyboard_event(None, 0, false)
-            .ok_or(tr("app.insertion.keyboard_event"))?;
+            .ok_or_else(|| failure(tr("app.insertion.keyboard_event").into()))?;
+        validate().map_err(failure)?;
         for event in [&down, &up] {
             CGEvent::set_flags(Some(event), CGEventFlags(0));
             // The slice remains live for the call and contains complete UTF-16 scalars.
             unsafe {
                 CGEvent::keyboard_set_unicode_string(Some(event), chunk.len() as _, chunk.as_ptr())
             };
-            CGEvent::post_to_pid(target.pid, Some(event));
+            CGEvent::post_to_pid(pid, Some(event));
         }
+        posted = true;
     }
     Ok(())
 }
@@ -519,6 +649,9 @@ pub fn probe(expected_pid: Option<i32>) -> Result<(), String> {
         thread::sleep(Duration::from_secs(4));
     }
     let destination = Destination::capture_for(expected_pid, false)?;
+    if expected_pid.is_none() && destination.window_app().is_some() {
+        return Err(tr("app.insertion.window_only").into());
+    }
     eprintln!("{}", tr("app.probe.captured"));
     thread::sleep(if expected_pid.is_some() {
         Duration::from_millis(350)

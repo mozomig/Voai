@@ -221,6 +221,27 @@ impl Settings {
                         }
                     })
             }))
+            .children(
+                s.window_insertion_apps
+                    .iter()
+                    .enumerate()
+                    .map(|(index, bundle)| {
+                        let bundle_id = bundle.clone();
+                        Self::setting(
+                            p,
+                            tr("ui.dictation.window_insertion"),
+                            bundle,
+                            Button::new(("forget-window", index))
+                                .small()
+                                .label(tr("ui.dictation.ask_again"))
+                                .on_click(cx.listener(move |this, _, _, _| {
+                                    this.engine
+                                        .borrow_mut()
+                                        .dispatch(Command::ForgetWindowApp(bundle_id.clone()));
+                                })),
+                        )
+                    }),
+            )
             .child(self.speech_model(p, cx))
             .child(Self::setting_row(
                 p,

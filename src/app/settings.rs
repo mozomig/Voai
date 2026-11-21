@@ -27,6 +27,7 @@ pub(super) struct Settings {
     pub microphone: Option<String>,
     pub noise_suppression: bool,
     pub compact_widget: bool,
+    pub window_insertion_apps: std::collections::BTreeSet<String>,
     pub interface_language: voai_l10n::InterfaceLanguage,
     #[serde(default = "legacy_speech_language")]
     pub language: String,
@@ -61,6 +62,7 @@ impl Default for Settings {
             microphone: None,
             noise_suppression: false,
             compact_widget: false,
+            window_insertion_apps: Default::default(),
             interface_language: Default::default(),
             language: "auto".into(),
             speech: String::new(),
@@ -416,12 +418,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut settings = Settings::load(dir.path()).unwrap();
         assert!(!settings.noise_suppression);
+        assert!(settings.window_insertion_apps.is_empty());
+        settings
+            .window_insertion_apps
+            .insert("example.Editor".into());
         settings.noise_suppression = true;
         settings.language = "auto".into();
         settings.save(dir.path()).unwrap();
         let saved = Settings::load(dir.path()).unwrap();
         assert_eq!(saved.language, "auto");
         assert!(saved.noise_suppression);
+        assert!(saved.window_insertion_apps.contains("example.Editor"));
         fs::write(dir.path().join("settings.json"), r#"{"version":99}"#).unwrap();
         assert!(Settings::load(dir.path()).is_err());
     }

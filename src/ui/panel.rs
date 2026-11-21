@@ -272,6 +272,32 @@ impl Render for Panel {
                             }),
                     ),
             )
+            .when_some(s.window_prompt, |v, session| {
+                v.child(
+                    row()
+                        .mt_1()
+                        .gap_2()
+                        .child(
+                            primary_button("insert-window", tr("ui.panel.insert_here"), p)
+                                .on_click(cx.listener(move |this, _, _, _| {
+                                    this.engine.borrow_mut().dispatch(Command::ConfirmWindow {
+                                        session,
+                                        remember: false,
+                                    })
+                                })),
+                        )
+                        .child(
+                            button("remember-window", tr("ui.panel.always_here"), p).on_click(
+                                cx.listener(move |this, _, _, _| {
+                                    this.engine.borrow_mut().dispatch(Command::ConfirmWindow {
+                                        session,
+                                        remember: true,
+                                    })
+                                }),
+                            ),
+                        ),
+                )
+            })
             .when(s.phase == Phase::RecoverText, |v| {
                 v.child(row().mt_1().child(
                     primary_button("insert-original", tr("ui.panel.insert_original"), p).on_click(

@@ -59,6 +59,8 @@ pub struct Snapshot {
     pub microphone: Option<String>,
     pub noise_suppression: bool,
     pub compact_widget: bool,
+    pub window_prompt: Option<u64>,
+    pub window_insertion_apps: Vec<String>,
     pub microphones: Vec<String>,
     pub interface_language: voai_l10n::InterfaceLanguage,
     pub language: String,
@@ -130,6 +132,11 @@ pub enum Command {
     TestResultHandled(u64),
     Cancel,
     UseOriginal,
+    ConfirmWindow {
+        session: u64,
+        remember: bool,
+    },
+    ForgetWindowApp(String),
     DismissMessage,
     RefreshDevices,
 }

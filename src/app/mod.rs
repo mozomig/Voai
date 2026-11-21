@@ -174,6 +174,8 @@ impl Backend {
             microphone: s.microphone.clone(),
             noise_suppression: s.noise_suppression,
             compact_widget: s.compact_widget,
+            window_prompt: self.session.window_prompt(),
+            window_insertion_apps: s.window_insertion_apps.iter().cloned().collect(),
             microphones: self.devices.clone(),
             interface_language: s.interface_language,
             language: s.language.clone(),
@@ -401,6 +403,19 @@ impl Backend {
                 self.session.reset();
                 self.message.clear();
                 return Ok(());
+            }
+            Command::ConfirmWindow { session, remember } => {
+                let Some(bundle) = self.session.confirm_window(session) else {
+                    return Ok(());
+                };
+                if !remember {
+                    return Ok(());
+                }
+                next.window_insertion_apps.insert(bundle);
+            }
+            Command::ForgetWindowApp(bundle) => {
+                next.window_insertion_apps.remove(&bundle);
+                self.session.forget_window_app(&bundle);
             }
             Command::UseOriginal => {
                 self.use_original_pending = self.session.phase == Phase::RecoverText;

@@ -554,3 +554,6 @@ app.telegram.transcribing:
 app.telegram.transcription_failed:
   en: "Couldn’t transcribe this recording. Check the model and file format in Voai."
   ru: "Не удалось расшифровать запись. Проверьте модель и формат файла в Voai."
+app.insertion.confirm_window:
+  en: "Voai can only see the window in %{app}. Text will go wherever the cursor is."
+  ru: "В %{app} видно только окно. Текст появится там, где сейчас курсор."

@@ -81,6 +81,30 @@ impl Session {
         }
     }
 
+    fn window_app(&self) -> Option<(&str, &str)> {
+        match self.target.as_ref()? {
+            Destination::Field(field) => field.window_app(),
+            _ => None,
+        }
+    }
+
+    pub fn window_prompt(&self) -> Option<u64> {
+        (self.phase == Phase::RecoverFocus && self.window_app().is_some()).then_some(self.id)
+    }
+
+    pub fn forget_window_app(&mut self, bundle: &str) {
+        self.settings.window_insertion_apps.remove(bundle);
+    }
+
+    pub fn confirm_window(&mut self, session: u64) -> Option<String> {
+        if self.window_prompt() != Some(session) {
+            return None;
+        }
+        let bundle = self.window_app()?.0.to_owned();
+        self.deliver_confirmed(false);
+        (self.phase == Phase::Idle).then_some(bundle)
+    }
+
     pub fn elapsed(&self) -> u64 {
         self.started.map_or(self.elapsed, |t| t.elapsed().as_secs())
     }
@@ -145,6 +169,7 @@ impl Session {
 
     pub fn retarget(&mut self, target: Destination, test_active: bool) {
         if self.phase == Phase::RecoverFocus {
+            self.id = self.id.wrapping_add(1);
             self.target = Some(target);
             self.deliver(test_active);
         }
@@ -157,6 +182,17 @@ impl Session {
     }
 
     fn deliver(&mut self, test_active: bool) {
+        if let Some((bundle, name)) = self.window_app()
+            && !self.settings.window_insertion_apps.contains(bundle)
+        {
+            self.message = voai_l10n::tf!("app.insertion.confirm_window", app = name);
+            self.phase = Phase::RecoverFocus;
+            return;
+        }
+        self.deliver_confirmed(test_active);
+    }
+
+    fn deliver_confirmed(&mut self, test_active: bool) {
         self.message.clear();
         let outcome = match self.target.take() {
             Some(Destination::Field(destination)) => destination.deliver(&self.text),
@@ -371,6 +407,28 @@ mod tests {
         assert!(session.phase == Phase::RecoverText && session.result.is_none());
         session.use_original(true);
         assert_eq!(session.result.as_ref().unwrap().1, "исходный текст");
+    }
+
+    #[test]
+    fn window_consent_is_bound_to_the_current_prompt() {
+        let window = || Destination::Field(macos::Destination::test_window("example.Editor"));
+        let mut session = Session {
+            text: "Ready".into(),
+            target: Some(window()),
+            ..Session::default()
+        };
+        session.deliver(false);
+        let first = session.window_prompt().expect("confirmation required");
+        assert_eq!(session.text, "Ready");
+        session.retarget(window(), false);
+        let second = session
+            .window_prompt()
+            .expect("new target requires confirmation");
+        assert_ne!(first, second);
+        assert!(session.confirm_window(first).is_none());
+        assert_eq!(session.window_prompt(), Some(second));
+        session.reset();
+        assert!(session.confirm_window(second).is_none());
     }
 
     #[test]
