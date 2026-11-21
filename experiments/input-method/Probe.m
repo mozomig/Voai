@@ -74,7 +74,7 @@ static int demo(NSString *name, BOOL automatic) {
     TISInputSourceRef source = findSource(identifier);
     if (!old || !source) return 1;
     int result = 1;
-    if (TISSelectInputSource(source) == noErr) {
+    if (TISEnableInputSource(source) == noErr && TISSelectInputSource(source) == noErr) {
         if (automatic) [NSThread sleepForTimeInterval:1];
         BOOL cancelled = NO;
         while (held(kVK_RightOption)) {
@@ -95,6 +95,7 @@ static int demo(NSString *name, BOOL automatic) {
         }
         if (current) CFRelease(current);
     }
+    if (TISDisableInputSource(source) != noErr) result = 1;
     CFRelease(old);
     CFRelease(source);
     return result;
@@ -111,7 +112,7 @@ int main(int argc, const char **argv) {
             TISInputSourceRef source = findSource(identifier);
             if (!source) { fprintf(stderr,"Input source unavailable\n"); return 1; }
             OSStatus status = paramErr;
-            if ([action isEqual:@"register"]) status = TISEnableInputSource(source);
+            if ([action isEqual:@"register"]) status = noErr;
             if ([action isEqual:@"disable"]) status = TISDisableInputSource(source);
             CFRelease(source);
             fprintf(stderr,"TIS status: %d\n",(int)status);

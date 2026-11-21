@@ -11,6 +11,12 @@ file="$work/Voai IMK ${work##*/}.txt"
 printf '%s\n' "${file##*/}" > "$file"
 zed=/Applications/Zed.app/Contents/MacOS/cli
 xcrun clang -fobjc-arc -framework Cocoa -framework Carbon -framework InputMethodKit experiments/input-method/Probe.m -o "$work/control"
+cleanup() {
+    "$work/control" disable >/dev/null 2>&1 || true
+    pkill -fx "$app/Contents/MacOS/Probe" || true
+    if [[ -d "$app" ]]; then mv "$app" "$work/"; fi
+}
+trap cleanup EXIT
 open -g "$app"
 "$zed" -n "$file"
 "$work/control" demo "${file##*/}"
