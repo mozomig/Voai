@@ -1,17 +1,74 @@
 #!/bin/bash
-# Prepare assets locally; publication is a separate step.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+usage() {
+    echo "Usage: VOAI_SIGN_IDENTITY=<identity or -> [VOAI_RELEASE_NOTES=file] $0 [--publish]"
+    echo "By default, prepare the DMG, ZIP and Sparkle feed locally. Add --publish to release them on GitHub."
+}
+publish=false
+case "$#:${1:-}" in
+    0:) ;;
+    1:--publish) publish=true ;;
+    1:--help|1:-h) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+esac
+
 repo=$(./scripts/release-repository)
 : "${repo:?Set VOAI_RELEASE_REPOSITORY to owner/repository}"
-: "${VOAI_SIGN_IDENTITY:?Set the Developer ID Application signing identity}"
-: "${VOAI_NOTARY_PROFILE:?Set the notarytool keychain profile}"
+: "${VOAI_SIGN_IDENTITY:?Set a Developer ID Application identity, or - for an unnotarized release}"
+if [[ "$VOAI_SIGN_IDENTITY" != "-" ]]; then
+    : "${VOAI_NOTARY_PROFILE:?Set the notarytool Keychain profile for a Developer ID release}"
+elif [[ -n "${VOAI_NOTARY_PROFILE:-}" ]]; then
+    echo "Notarization requires a Developer ID Application identity." >&2; exit 2
+fi
+
 version=$(plutil -extract CFBundleShortVersionString raw packaging/Info.plist)
+tag="v$version"
 export VOAI_RELEASE_REPOSITORY="$repo"
-export VOAI_DIST_DIR="${VOAI_DIST_DIR:-$PWD/target/dist/v$version}"
+export VOAI_DIST_DIR="${VOAI_DIST_DIR:-$PWD/target/dist/$tag}"
+if [[ -n "${VOAI_RELEASE_NOTES:-}" && ! -s "$VOAI_RELEASE_NOTES" ]]; then
+    echo "Release notes are missing or empty: $VOAI_RELEASE_NOTES" >&2; exit 2
+fi
+
+if "$publish"; then
+    export GH_HOST=github.com GH_PROMPT_DISABLED=1
+    command -v gh >/dev/null || { echo "Install GitHub CLI (gh) to publish a release." >&2; exit 1; }
+    gh auth status --active --hostname "$GH_HOST" >/dev/null || {
+        echo "Run gh auth login --hostname github.com or set GH_TOKEN to publish." >&2; exit 1
+    }
+    if [[ -n "$(git status --porcelain)" ]]; then
+        echo "Commit the release source before publishing." >&2; exit 1
+    fi
+    commit=$(git rev-parse HEAD)
+    remote_commit=$(gh api "repos/$repo/commits/$tag" --jq '.sha') || {
+        echo "Push tag $tag at the release commit in $repo before publishing." >&2; exit 1
+    }
+    if [[ "$remote_commit" != "$commit" ]]; then
+        echo "Tag $tag in $repo points to $remote_commit. Check out the tagged source." >&2; exit 1
+    fi
+    if gh release view "$tag" --repo "$repo" --json url >/dev/null 2>&1; then
+        echo "A release or draft already exists for $tag. Inspect it with gh release view $tag --repo $repo." >&2; exit 1
+    fi
+fi
+
 ./scripts/package-macos
 dmg="$VOAI_DIST_DIR/Voai-$version-arm64.dmg"
+zip="$VOAI_DIST_DIR/Voai.zip"
 ./scripts/verify-macos-release "$dmg"
-./scripts/verify-macos-release "$VOAI_DIST_DIR/Voai.zip"
+./scripts/verify-macos-release "$zip"
 ./scripts/make-appcast
-echo "Ready for GitHub Release v$version: $dmg, $VOAI_DIST_DIR/Voai.zip, $VOAI_DIST_DIR/appcast.xml"
+feed="$VOAI_DIST_DIR/appcast.xml"
+
+if "$publish"; then
+    notes=(--generate-notes)
+    if [[ -n "${VOAI_RELEASE_NOTES:-}" ]]; then
+        notes=(--notes-file "$VOAI_RELEASE_NOTES")
+    elif [[ "$VOAI_SIGN_IDENTITY" == "-" ]]; then
+        notes+=(--notes "This build is distributed without Apple notarization. On first launch, macOS may require approval in System Settings → Privacy & Security.")
+    fi
+    gh release create "$tag" "$dmg" "$zip" "$feed" --repo "$repo" --verify-tag \
+        --title "Voai $version" --latest "${notes[@]}"
+else
+    echo "Ready for GitHub Release $tag: $dmg, $zip, $feed"
+fi

@@ -70,17 +70,25 @@ On a new clone, copy your GitHub noreply address from **GitHub → Settings → 
 The update feed uses the repository from the GitHub `origin` remote. For a separate release repository, set `VOAI_RELEASE_REPOSITORY=owner/repo`. A local build with no repository configured skips update checks.
 
 1. Bump the workspace version, update `Cargo.lock`, set the same short version in `packaging/Info.plist`, and increment `CFBundleVersion`. Sparkle uses the build number to compare releases.
-2. Set up a **Developer ID Application** certificate, a `notarytool` Keychain profile and the Sparkle signing key on the release Mac. The public key is in `packaging/sparkle-public-key.txt`. The private key is stored in Keychain under the Sparkle account `app.voai.desktop`. For a fork, generate a key with `"$(./scripts/sparkle-macos)/bin/generate_keys" --account YOUR_ACCOUNT` and set `VOAI_SPARKLE_ACCOUNT` and `VOAI_SPARKLE_PUBLIC_KEY`.
-3. Run the release script with your signing identity and notary profile. Optionally set `VOAI_RELEASE_NOTES` to a Markdown file. The script submits the app and DMG for notarization, staples the tickets and verifies the packages.
+2. Commit the release source, create an annotated tag named `v<version>`, then push the commit and tag. Run the release command from that clean checkout. The script checks the GitHub tag against the local commit before building.
+3. Authenticate GitHub CLI once with `gh auth login --hostname github.com`. For a noninteractive environment, set `GH_TOKEN` through its secret store. A fine-grained token needs **Contents: Read and write** on the release repository. The Sparkle private key stays in the macOS Keychain under `app.voai.desktop`. Its public key is in `packaging/sparkle-public-key.txt`.
+4. Run the command for the signing method you use. Set `VOAI_RELEASE_NOTES` to a Markdown file to use the same notes on GitHub and in Sparkle. Place untracked notes outside the checkout or under `target/`. Without that variable, GitHub generates its own release notes.
+
+For the unnotarized distribution used by Voai 1.8.0:
+
+```sh
+VOAI_SIGN_IDENTITY=- VOAI_RELEASE_NOTES=/tmp/voai-release.md ./scripts/release-macos --publish
+```
+
+For a notarized Developer ID release:
 
 ```sh
 VOAI_SIGN_IDENTITY='Developer ID Application: …' \
 VOAI_NOTARY_PROFILE='voai-notary' \
-./scripts/release-macos
+VOAI_RELEASE_NOTES=/tmp/voai-release.md \
+./scripts/release-macos --publish
 ```
 
-4. Create a draft GitHub Release tagged `v<version>`. Attach `Voai-<version>-arm64.dmg`, `Voai.zip` and `appcast.xml` from `target/dist/v<version>/`. Publish it as **Latest**. Sparkle checks `releases/latest/download/appcast.xml`, then downloads the DMG from the versioned tag. If the DMG changes, regenerate the signatures and feed.
-
-For a release without Apple notarization, leave `VOAI_NOTARY_PROFILE` unset, set `VOAI_SIGN_IDENTITY=-` for ad hoc signing and set `VOAI_DIST_DIR` to your release directory. Run `./scripts/package-macos`, verify both archives, then run `./scripts/make-appcast` with the same environment. Publish the three assets together as in step 4. Describe the first-launch Gatekeeper prompt in the release notes. The Sparkle private key stays in Keychain.
+The script builds and verifies the DMG and ZIP and signs the Sparkle feed. GitHub CLI uploads all three assets to a draft before publishing it as **Latest**. Sparkle reads `releases/latest/download/appcast.xml`. Omit `--publish` to prepare the files locally without GitHub credentials. If an upload is interrupted, check `gh release view v<version>` for a draft before retrying. [GitHub CLI release creation](https://cli.github.com/manual/gh_release_create)
 
 For a local rehearsal with a development certificate, run `./scripts/package-macos`, `./scripts/make-appcast` and `./scripts/verify-macos-release path/to/image.dmg`. The artifacts are written to `target/dist/release/`. [Publishing with Sparkle](https://sparkle-project.org/documentation/publishing/)
