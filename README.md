@@ -18,7 +18,7 @@ Text editing is optional. For dictation, use a GGUF model, a local Ollama or LM 
 
 ## Try it
 
-Download the DMG from [GitHub Releases](https://github.com/mozomig/Voai/releases), open it and drag Voai to Applications. Version 1.6.0 is distributed without Apple notarization. If macOS blocks the first launch, you can review Voai in **System Settings → Privacy & Security** after trying to open it. Voai checks for signed updates through Sparkle.
+Download the DMG from [GitHub Releases](https://github.com/mozomig/Voai/releases), open it and drag Voai to Applications. The current release is distributed without Apple notarization. If macOS blocks the first launch, you can review Voai in **System Settings → Privacy & Security** after trying to open it. Voai checks for signed updates through Sparkle.
 
 To build from source, you'll need Xcode with the Metal toolchain, CMake and a stable Rust toolchain that supports the 2024 edition.
 
