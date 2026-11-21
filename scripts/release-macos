@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 usage() {
-    echo "Usage: VOAI_SIGN_IDENTITY=<identity or -> [VOAI_RELEASE_NOTES=file] $0 [--publish]"
+    echo "Usage: VOAI_SIGN_IDENTITY=<identity> [VOAI_NOTARY_PROFILE=profile] [VOAI_RELEASE_NOTES=file] $0 [--publish]"
     echo "By default, prepare the DMG, ZIP and Sparkle feed locally. Add --publish to release them on GitHub."
 }
 publish=false
@@ -16,12 +16,18 @@ esac
 
 repo=$(./scripts/release-repository)
 : "${repo:?Set VOAI_RELEASE_REPOSITORY to owner/repository}"
-: "${VOAI_SIGN_IDENTITY:?Set a Developer ID Application identity, or - for an unnotarized release}"
-if [[ "$VOAI_SIGN_IDENTITY" != "-" ]]; then
-    : "${VOAI_NOTARY_PROFILE:?Set the notarytool Keychain profile for a Developer ID release}"
-elif [[ -n "${VOAI_NOTARY_PROFILE:-}" ]]; then
-    echo "Notarization requires a Developer ID Application identity." >&2; exit 2
-fi
+# Every release must use the same certificate so macOS keeps privacy grants after an update.
+VOAI_SIGN_IDENTITY="${VOAI_SIGN_IDENTITY:-$(git config --local --get voai.releaseIdentity 2>/dev/null || true)}"
+export VOAI_SIGN_IDENTITY
+: "${VOAI_SIGN_IDENTITY:?Set voai.releaseIdentity or VOAI_SIGN_IDENTITY to a Developer ID Application identity, or a self-signed release identity for an unnotarized release}"
+case "$VOAI_SIGN_IDENTITY" in
+    "Developer ID Application:"*)
+        : "${VOAI_NOTARY_PROFILE:?Set the notarytool Keychain profile for a Developer ID release}";;
+    -)
+        # macOS ties privacy grants for ad hoc code to one build, so every update would reset them.
+        echo "Ad hoc releases lose Accessibility and microphone access on every update. Use the release signing identity." >&2
+        exit 2;;
+esac
 
 version=$(plutil -extract CFBundleShortVersionString raw packaging/Info.plist)
 tag="v$version"
@@ -73,7 +79,7 @@ if "$publish"; then
     notes=(--generate-notes)
     if [[ -n "${VOAI_RELEASE_NOTES:-}" ]]; then
         notes=(--notes-file "$VOAI_RELEASE_NOTES")
-    elif [[ "$VOAI_SIGN_IDENTITY" == "-" ]]; then
+    elif [[ -z "${VOAI_NOTARY_PROFILE:-}" ]]; then
         notes+=(--notes "This build is distributed without Apple notarization. On first launch, macOS may require approval in System Settings → Privacy & Security.")
     fi
     gh release create "$tag" "$dmg" "$zip" "$feed" --repo "$repo" --verify-tag \

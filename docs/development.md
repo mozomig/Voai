@@ -75,11 +75,16 @@ The update feed uses the repository from the GitHub `origin` remote. For a separ
 4. For local publishing, you can also put `GH_TOKEN=your_token` on its own line in the project's ignored `.env` file. Set the file permissions to `600`. An exported token takes precedence.
 5. Run the command for the signing method you use. Set `VOAI_RELEASE_NOTES` to a Markdown file to use the same notes on GitHub and in Sparkle. Place untracked notes outside the checkout or under `target/`. Without that variable, GitHub generates its own release notes.
 
-For the unnotarized distribution used by Voai 1.8.0:
+Unnotarized releases are signed with the self-signed **Voai Release Signing** certificate in the login Keychain. macOS ties Accessibility and microphone grants to the signing certificate, so users keep them after a Sparkle update. Ad hoc signing ties them to a single build, so `release-macos` refuses `-`. Sparkle accepts the change of certificate because the EdDSA key stays the same.
+
+Store the certificate's fingerprint once per checkout, then run the release:
 
 ```sh
-VOAI_SIGN_IDENTITY=- VOAI_RELEASE_NOTES=/tmp/voai-release.md ./scripts/release-macos --publish
+git config --local voai.releaseIdentity 725F088D35B2A76F3E97689503FC1EC482644419
+VOAI_RELEASE_NOTES=/tmp/voai-release.md ./scripts/release-macos --publish
 ```
+
+Keep an encrypted backup of the identity, exported from Keychain Access as a `.p12` file. If you lose its private key, the next release will need a new certificate and every user will have to grant permissions again. To restore it on another Mac, run `security import voai-signing.p12 -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign`.
 
 For a notarized Developer ID release:
 

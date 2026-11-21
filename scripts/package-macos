@@ -52,11 +52,20 @@ if [[ "$("$app/Contents/MacOS/voai" --version)" != "Voai $version" ]]; then
     echo "The Rust package and Info.plist release versions differ." >&2
     exit 1
 fi
+team=""
 if [[ "$identity" == "-" ]]; then
     echo "Using ad hoc signing. Configure voai.signingIdentity to retain macOS permissions across builds." >&2
+else
+    # A self-signed certificate has no Team ID, which changes library validation below.
+    cp /usr/bin/true "$stage/identity-probe"
+    codesign --force --sign "$identity" "$stage/identity-probe"
+    team="$(codesign -dv "$stage/identity-probe" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+    if [[ "$team" == "not set" ]]; then team=""; fi
+    rm "$stage/identity-probe"
 fi
 sign=(--force --sign "$identity" --options runtime)
-if [[ "$identity" != "-" ]]; then sign+=(--timestamp); fi
+# Apple's timestamp service only accepts identities issued by Apple.
+if [[ -n "$team" ]]; then sign+=(--timestamp); fi
 framework="$app/Contents/Frameworks/Sparkle.framework"
 nested="$framework/Versions/B"
 for component in "$nested"/XPCServices/*.xpc "$nested/Autoupdate" "$nested/Updater.app" "$framework"; do
@@ -67,9 +76,9 @@ for helper in voai-asr-helper voai-text-helper voai-media-helper voai-diarize; d
 done
 entitlements=packaging/entitlements.plist
 constraint=()
-if [[ "$identity" == "-" && -n "$repo" ]]; then
-    # Ad hoc code has no Team ID. Pin the bundled arm64 Sparkle library and
-    # allow macOS platform libraries while keeping the hardened runtime.
+if [[ -z "$team" && -n "$repo" ]]; then
+    # Ad hoc and self-signed code have no Team ID. Pin the bundled arm64 Sparkle
+    # library and allow macOS platform libraries while keeping the hardened runtime.
     entitlements="$stage/adhoc-entitlements.plist"
     cp packaging/entitlements.plist "$entitlements"
     /usr/libexec/PlistBuddy -c 'Add :com.apple.security.cs.disable-library-validation bool true' "$entitlements"
