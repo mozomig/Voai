@@ -72,7 +72,8 @@ The update feed uses the repository from the GitHub `origin` remote. For a separ
 1. Bump the workspace version, update `Cargo.lock`, set the same short version in `packaging/Info.plist`, and increment `CFBundleVersion`. Sparkle uses the build number to compare releases.
 2. Commit the release source, create an annotated tag named `v<version>`, then push the commit and tag. Run the release command from that clean checkout. The script checks the GitHub tag against the local commit before building.
 3. Authenticate GitHub CLI once with `gh auth login --hostname github.com`. For a noninteractive environment, set `GH_TOKEN` through its secret store. A fine-grained token needs **Contents: Read and write** on the release repository. The Sparkle private key stays in the macOS Keychain under `app.voai.desktop`. Its public key is in `packaging/sparkle-public-key.txt`.
-4. Run the command for the signing method you use. Set `VOAI_RELEASE_NOTES` to a Markdown file to use the same notes on GitHub and in Sparkle. Place untracked notes outside the checkout or under `target/`. Without that variable, GitHub generates its own release notes.
+4. For local publishing, you can also put `GH_TOKEN=your_token` on its own line in the project's ignored `.env` file. Set the file permissions to `600`. An exported token takes precedence.
+5. Run the command for the signing method you use. Set `VOAI_RELEASE_NOTES` to a Markdown file to use the same notes on GitHub and in Sparkle. Place untracked notes outside the checkout or under `target/`. Without that variable, GitHub generates its own release notes.
 
 For the unnotarized distribution used by Voai 1.8.0:
 
