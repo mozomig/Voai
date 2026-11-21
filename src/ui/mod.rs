@@ -1,6 +1,7 @@
 use voai_l10n::tr;
 mod appearance;
 mod copy_text;
+mod launch;
 mod panel;
 mod settings;
 mod style;
@@ -34,6 +35,7 @@ actions!(
 struct Desktop {
     engine: Engine,
     settings: Option<WindowHandle<Root>>,
+    launch_ready: bool,
     panel: Option<WindowHandle<Panel>>,
     tray: Option<StatusItem>,
     last: Option<Snapshot>,
@@ -54,6 +56,9 @@ impl Desktop {
     }
 
     fn show_settings(&mut self, cx: &mut App) {
+        if !self.launch_ready {
+            return;
+        }
         if let Some(handle) = self.settings
             && handle
                 .update(cx, |_, window, _| window.activate_window())
@@ -296,11 +301,13 @@ pub fn run(backend: Backend) {
     let desktop = Rc::new(RefCell::new(Desktop {
         engine: Rc::new(RefCell::new(backend)),
         settings: None,
+        launch_ready: false,
         panel: None,
         tray: None,
         last: None,
         language: voai_l10n::language(),
     }));
+    let restored = launch::windows_restored();
     let app = Application::new().with_assets(style::Artwork);
     let reopen = desktop.clone();
     app.on_reopen(move |cx| reopen.borrow_mut().show_settings(cx));
@@ -348,9 +355,19 @@ pub fn run(backend: Backend) {
             Ok(tray) => desktop.borrow_mut().tray = Some(tray),
             Err(error) => eprintln!("Could not create the Voai menu: {error}"),
         }
-        desktop.borrow_mut().show_settings(cx);
         let wake = desktop.borrow().engine.borrow().wake_signal();
         cx.spawn(async move |cx| {
+            restored.await;
+            if cx
+                .update(|cx| {
+                    let mut desktop = desktop.borrow_mut();
+                    desktop.launch_ready = true;
+                    desktop.show_settings(cx);
+                })
+                .is_err()
+            {
+                return;
+            }
             while let Ok(delay) = cx.update(|cx| {
                 let mut desktop = desktop.borrow_mut();
                 desktop.poll(cx);

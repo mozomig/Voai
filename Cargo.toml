@@ -25,13 +25,13 @@ chrono = "0.4"
 rusqlite = "0.37"
 hound = "3.5"
 objc2-avf-audio = { version = "0.3.2", default-features = false, features = ["std", "AVAudioPlayer"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSNotification", "NSOperation", "block2"] }
 fs2 = "0.4"
 # Keep HTTP wire traces from exposing private request bodies in application logs.
 log = { version = "0.4", features = ["max_level_info"] }
 objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["std", "AVMediaFormat", "AVCaptureDevice", "block2"] }
 block2 = "0.6"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSEvent", "block2", "NSWorkspace", "NSRunningApplication", "NSAppearance", "NSApplication", "NSSavePanel", "NSScreen", "NSPanel", "NSWindow", "NSView", "NSResponder", "libc"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSEvent", "block2", "NSWorkspace", "NSRunningApplication", "NSAppearance", "NSApplication", "NSSavePanel", "NSScreen", "NSPanel", "NSWindow", "NSWindowRestoration", "NSView", "NSResponder", "libc"] }
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGDirectDisplay", "CGError", "CGEvent", "CGEventTypes", "CGEventSource", "CGRemoteOperation", "libc"] }
 voai-models = { path = "crates/voai-models" }
 voai-speech = { path = "crates/voai-speech" }
@@ -51,7 +51,7 @@ members = ["crates/voai-asr-worker", "crates/voai-asr-helper", "crates/voai-l10n
 default-members = ["."]
 
 [workspace.package]
-version = "1.8.0"
+version = "1.8.1"
 edition = "2024"
 
 [profile.dev]
