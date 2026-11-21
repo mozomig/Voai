@@ -251,6 +251,33 @@ fn front_pid() -> Option<i32> {
         .map(|app| app.processIdentifier())
 }
 
+pub fn application_bundle_id(path: &std::path::Path) -> Option<String> {
+    use objc2_foundation::{NSBundle, NSString};
+    if !path.extension()?.eq_ignore_ascii_case("app") {
+        return None;
+    }
+    let bundle = NSBundle::bundleWithPath(&NSString::from_str(path.to_str()?))?;
+    let kind = bundle
+        .objectForInfoDictionaryKey(&NSString::from_str("CFBundlePackageType"))?
+        .downcast::<NSString>()
+        .ok()?;
+    if kind.to_string() != "APPL" {
+        return None;
+    }
+    let id = bundle.bundleIdentifier()?.to_string();
+    (!id.is_empty()).then_some(id)
+}
+
+pub fn application_name(id: &str) -> Option<String> {
+    use objc2_foundation::{NSFileManager, NSString};
+    let url = objc2_app_kit::NSWorkspace::sharedWorkspace()
+        .URLForApplicationWithBundleIdentifier(&NSString::from_str(id))?;
+    let name = NSFileManager::defaultManager()
+        .displayNameAtPath(url.path()?.as_ref())
+        .to_string();
+    Some(name.trim_end_matches(".app").to_owned())
+}
+
 pub fn app_frontmost() -> bool {
     front_pid() == Some(std::process::id() as i32)
 }

@@ -28,7 +28,8 @@ actions!(
         OpenPermissions,
         OpenSpeechModels,
         Quit,
-        CloseSettings
+        CloseSettings,
+        HideSettings
     ]
 );
 
@@ -59,9 +60,17 @@ impl Desktop {
         if !self.launch_ready {
             return;
         }
+        appearance::set_switcher_visible(true);
         if let Some(handle) = self.settings
             && handle
-                .update(cx, |_, window, _| window.activate_window())
+                .update(cx, |_, window, _| {
+                    if let Some(native) = appearance::native_window(window)
+                        && native.isMiniaturized()
+                    {
+                        native.deminiaturize(None);
+                    }
+                    window.activate_window()
+                })
                 .is_ok()
         {
             cx.activate(true);
@@ -129,6 +138,22 @@ impl Desktop {
     }
 
     fn poll(&mut self, cx: &mut App) {
+        // Only the settings window participates in app switching. Dictation
+        // panels can appear while another application owns keyboard focus.
+        if self.tray.is_some() {
+            let visible = self
+                .settings
+                .and_then(|handle| {
+                    handle
+                        .update(cx, |_, window, _| {
+                            appearance::native_window(window)
+                                .is_none_or(|native| native.isVisible() && !native.isMiniaturized())
+                        })
+                        .ok()
+                })
+                .unwrap_or(false);
+            appearance::set_switcher_visible(visible);
+        }
         if let Some(tray) = self.tray.as_ref() {
             let commands = tray.commands().collect::<Vec<_>>();
             for command in commands {
@@ -289,6 +314,7 @@ fn set_app_menu(cx: &mut App) {
     }
     items.extend([
         MenuItem::separator(),
+        MenuItem::action(tr("ui.menu.hide"), HideSettings),
         MenuItem::action(tr("ui.menu.quit"), Quit),
     ]);
     cx.set_menus(vec![Menu {
@@ -324,6 +350,22 @@ pub fn run(backend: Backend) {
         let models = desktop.clone();
         cx.on_action(move |_: &OpenSpeechModels, cx| models.borrow_mut().show_setup(true, cx));
         cx.on_action(|_: &Quit, cx| cx.quit());
+        let hideable = desktop.clone();
+        cx.on_action(move |_: &HideSettings, cx| {
+            let desktop = hideable.borrow();
+            if desktop.tray.is_none() {
+                cx.hide();
+            } else if let Some(handle) = desktop.settings {
+                // The keybinding can run while GPUI is dispatching into this window.
+                cx.defer(move |cx| {
+                    let _ = handle.update(cx, |_, window, _| {
+                        if let Some(native) = appearance::native_window(window) {
+                            native.orderOut(None);
+                        }
+                    });
+                });
+            }
+        });
         let closable = desktop.clone();
         cx.on_action(move |_: &CloseSettings, cx| {
             let desktop = closable.borrow();
@@ -341,12 +383,15 @@ pub fn run(backend: Backend) {
                     .borrow_mut()
                     .dispatch(Command::File(crate::app::FileCommand::Stop));
                 desktop.engine.borrow_mut().dispatch(Command::StopPlayback);
-                let _ = handle.update(cx, |_, window, _| window.remove_window());
+                cx.defer(move |cx| {
+                    let _ = handle.update(cx, |_, window, _| window.remove_window());
+                });
             }
         });
         cx.bind_keys([
             KeyBinding::new("cmd-,", OpenSettings, None),
             KeyBinding::new("cmd-q", Quit, None),
+            KeyBinding::new("cmd-h", HideSettings, None),
             KeyBinding::new("cmd-w", CloseSettings, None),
         ]);
         cx.on_action(|_: &CheckUpdates, _| updates::check());

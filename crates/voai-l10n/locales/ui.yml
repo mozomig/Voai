@@ -692,3 +692,27 @@ ui.dictation.window_insertion:
 ui.dictation.ask_again:
   en: "Ask each time"
   ru: "Спрашивать каждый раз"
+ui.menu.hide:
+  en: "Hide Voai"
+  ru: "Скрыть Voai"
+ui.window_apps.manage:
+  en: "Manage apps…"
+  ru: "Управлять приложениями…"
+ui.window_apps.detail:
+  en: "When Voai can only see the window, it inserts text at the cursor without asking in the apps listed here."
+  ru: "Если Voai видит только окно, в этих приложениях текст вставляется на месте курсора без подтверждения."
+ui.window_apps.add:
+  en: "Add app…"
+  ru: "Добавить приложение…"
+ui.window_apps.app:
+  en: "Application"
+  ru: "Приложение"
+ui.window_apps.insertion:
+  en: "Confirmation"
+  ru: "Подтверждение"
+ui.window_apps.empty:
+  en: "No apps added. Voai will ask before inserting."
+  ru: "Список пуст. Перед вставкой Voai спросит разрешение."
+ui.window_apps.invalid:
+  en: "Choose a macOS application (.app)."
+  ru: "Выберите приложение macOS (.app)."

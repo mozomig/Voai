@@ -413,6 +413,11 @@ impl Backend {
                 }
                 next.window_insertion_apps.insert(bundle);
             }
+            Command::AddWindowApp(path) => {
+                let bundle =
+                    macos::application_bundle_id(&path).ok_or(tr("ui.window_apps.invalid"))?;
+                next.window_insertion_apps.insert(bundle);
+            }
             Command::ForgetWindowApp(bundle) => {
                 next.window_insertion_apps.remove(&bundle);
                 self.session.forget_window_app(&bundle);

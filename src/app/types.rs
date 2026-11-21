@@ -136,6 +136,7 @@ pub enum Command {
         session: u64,
         remember: bool,
     },
+    AddWindowApp(std::path::PathBuf),
     ForgetWindowApp(String),
     DismissMessage,
     RefreshDevices,

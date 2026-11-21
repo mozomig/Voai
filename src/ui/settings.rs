@@ -8,6 +8,7 @@ mod models;
 mod onboarding;
 mod processing;
 mod telegram;
+mod window_apps;
 
 use gpui::{prelude::*, *};
 use gpui_component::{
@@ -23,6 +24,7 @@ use crate::app::{Command, Mode, ModelRow, ModelState, Snapshot};
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Page {
     Dictation,
+    WindowApps,
     Models,
     Processing,
     History,
@@ -34,6 +36,7 @@ impl Page {
     fn title(self) -> &'static str {
         match self {
             Self::Dictation => tr("ui.page.dictation"),
+            Self::WindowApps => tr("ui.dictation.window_insertion"),
             Self::Models => tr("ui.page.models"),
             Self::Processing => tr("ui.page.editing"),
             Self::History => tr("ui.page.history"),
@@ -43,7 +46,7 @@ impl Page {
     }
     fn icon(self) -> &'static str {
         match self {
-            Self::Dictation => "mic",
+            Self::Dictation | Self::WindowApps => "mic",
             Self::Models => "models",
             Self::Processing => "sliders",
             Self::History => "history",
@@ -73,6 +76,7 @@ pub(super) struct Settings {
     engine: Engine,
     snapshot: Snapshot,
     page: Page,
+    window_apps: Vec<(String, String)>,
     intro: Option<onboarding::Step>,
     files_ui: files::FileControls,
     agent_ui: agent::AgentControls,
@@ -182,6 +186,7 @@ impl Settings {
             intro: (!snapshot.onboarding_complete).then_some(onboarding::Step::Welcome),
             snapshot,
             page: Page::Dictation,
+            window_apps: Vec::new(),
             files_ui,
             expanded_entry: None,
             confirm_delete: None,
@@ -296,6 +301,11 @@ impl Settings {
             self.expanded_entry = snapshot.history.entries.first().map(|e| e.id);
         }
         self.files_ui.sync(&self.snapshot.files, &snapshot.files);
+        if self.page == Page::WindowApps
+            && self.snapshot.window_insertion_apps != snapshot.window_insertion_apps
+        {
+            self.window_apps = window_apps::rows(&snapshot.window_insertion_apps);
+        }
         self.snapshot = snapshot;
         cx.notify();
     }
@@ -318,6 +328,7 @@ impl Settings {
     pub(super) fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         self.intro = None;
         if self.page != page {
+            self.file_dialog_error = None;
             if self.page == Page::Telegram {
                 self.telegram_token = Self::new_telegram_token(window, cx);
             }
@@ -335,6 +346,9 @@ impl Settings {
             self.set_test_ready(false);
             self.show_server_key = false;
             self.key.update(cx, |key, cx| key.set_value("", window, cx));
+        }
+        if page == Page::WindowApps {
+            self.window_apps = window_apps::rows(&self.snapshot.window_insertion_apps);
         }
         if page == Page::Dictation {
             self.send(Command::RefreshDevices);
@@ -381,6 +395,11 @@ impl Settings {
     fn hotkey_input(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if !self.capture {
             let key = &event.keystroke;
+            if self.page == Page::WindowApps && key.key == "escape" {
+                cx.stop_propagation();
+                self.navigate(Page::Dictation, window, cx);
+                return;
+            }
             if self.page == Page::Files && key.key == "escape" && self.files_ui.cancel_edit() {
                 window.prevent_default();
                 cx.stop_propagation();
@@ -450,7 +469,8 @@ impl Settings {
                     Page::History,
                 ]
                 .map(|page| {
-                    let selected = page == self.page;
+                    let selected = page == self.page
+                        || (page == Page::Dictation && self.page == Page::WindowApps);
                     Button::new(page.icon())
                         .ghost()
                         .w_full()
@@ -617,6 +637,7 @@ impl Render for Settings {
         }
         let page = match self.page {
             Page::Dictation => self.dictation(p, cx),
+            Page::WindowApps => self.window_apps_page(p, cx),
             Page::Models => self.models(p, cx),
             Page::Processing => self.processing(p, cx),
             Page::History => self.history(p, cx),

@@ -58,18 +58,10 @@ impl Panel {
 
 /// Keep keyboard focus in the editor even when clicking a panel action.
 fn configure_panel(window: &Window, compact: bool) {
-    use objc2_app_kit::{NSPanel, NSView};
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-    let Ok(handle) = HasWindowHandle::window_handle(window) else {
-        return;
-    };
-    let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
-        return;
-    };
-    // GPUI supplies the host NSView. The Window borrow keeps it alive and
-    // window creation always runs on the AppKit main thread.
-    let view = unsafe { handle.ns_view.cast::<NSView>().as_ref() };
-    if let Some(panel) = view.window().and_then(|w| w.downcast::<NSPanel>().ok()) {
+    if let Some(panel) = super::appearance::native_window(window)
+        .and_then(|w| w.downcast::<objc2_app_kit::NSPanel>().ok())
+    {
+        panel.setCanHide(false);
         panel.setBecomesKeyOnlyIfNeeded(true);
         panel.setHidesOnDeactivate(false);
         panel.setIgnoresMouseEvents(compact);
